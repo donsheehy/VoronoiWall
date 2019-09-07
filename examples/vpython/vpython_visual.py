@@ -34,11 +34,12 @@ for point in vor.vertices:
 
 """print("vor.vertices: " + str(vor.vertices))"""
 """print("vor.ridge_vertices: " + str(vor.ridge_vertices))"""
+"""print("vor.regions: " + str(vor.regions))"""
 
 # collect the indices of the vertices for all of the closed faces (those which don't extend to infinity)
 completeShapeVertices = []
 for indexList in vor.ridge_vertices:
-    if -1 not in indexList:
+    if -1 not in indexList:# and indexList != []:
         completeShapeVertices.append(indexList)
 
 """print("completeShapeVertices: " + str(completeShapeVertices))"""
@@ -55,6 +56,9 @@ for vertexIndexList in completeShapeVertices:
     # convert point-lists to vpython vector objects
     pts = list(map((lambda x: vector(x[0], x[1], x[2])), pts))
     # draw the outline of the closed face
-    curve(pts)
+    c = curve(pts)
+    # loop back to close the face
+    c.color = color.blue
+    c.append(pts[0])
 
     """print("shape: " + str(pts))"""
