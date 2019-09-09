@@ -1,70 +1,149 @@
+import vpython as v
 import numpy as np
-import matplotlib.pyplot as plt
 
 """
-Generates an STL file for 3D printing a Voronoi diagram. (eventually)
+Generates an STL file for 3D printing a Voronoi diagram. 
 """
 
 
-def prepare(voronoi, precision):
+# def displayShape(numpyArray3D):
+#     # display the input points in white
+#     vpyPoints = []
+#     for point in numpyArray3D:
+#         [x, y, z] = point
+#         vpyVector = v.vec(x, y, z)
+#         v.sphere(pos=vpyVector, radius=.2)
+#         vpyPoints.append(vpyVector)
+#
+#     c = v.curve(vpyPoints)
+#     c.append(vpyPoints[0])
+
+
+def prepare(voronoi, filePath):
     """
     Prepares a 3D printable model of the given Voronoi diagram.
 
     :param voronoi: computed Voronoi attributes
-    :param precision: some minimum precision value to produce an accurate 3D model
-    :return:
+    :return: unused
     """
-    # TODO: the rest
+
+    output = open(filePath, "w")
+    output.write("solid Voronoi\n")
+    faces = []
+    for indexList in voronoi.ridge_vertices:
+        if -1 not in indexList:
+            face = []
+            for index in indexList:
+                face.append(voronoi.vertices[index])
+            faces.append(np.asarray(face))
+    # I'm thinking order could be important for the triangle vertices and is being lost?
+    for face in faces:
+        triangles = triangulate(face)
+        # compute a normal vector for this face
+        normal = np.cross(face[1] - face[0], face[2] - face[1])
+        # process points in batches of 3 (points of a triangle)
+        for i in range(0, len(triangles), 3):
+            # begin a new STL triangle
+            output.write("facet normal {} {} {}\n".format(normal[0], normal[1], normal[2]))
+            output.write("outer loop\n")
+            trianglePoints = triangles[i:i + 3]
+            for j in range(0, 3):
+                output.write("vertex {} {} {}\n".format(trianglePoints[j][0], trianglePoints[j][1], trianglePoints[j][2]))
+        output.write("endloop\nendfacet\n")
+
+    output.write("endsolid Voronoi\n")
+
+def triangulate(points):
+    # move all points by this much so the shape has to be touching the origin
+    offset = points[0]
+    # get a normal vector to the plane for the rotation matrix
+    normalVector = np.cross(points[1] - points[0], points[2] - points[1])
+    # translate to the origin, then rotate from the current plane onto XY-plane with normal <0,0,-1>
+    points = __rotateToPlane(points, normalVector, np.array([0, 0, 1]), False, offset)
+    # reduce the (N, 3) array to an (N, 2) array because QHull will complain about operating on planes in 3D
+    points = __chopOffThirdDimension(points)
+    # use the Delaunay triangulation to divide this plane into triangles (for 3D printing ability)
+    points = __subdivideFace(points)
+    # expand the (N, 2) array back to an (N, 3) array by adding a zeroed column
+    points = __addEmptyThirdDimension(points)
+    # rotate back to the plane we were in originally, then translate back to the original location
+    points = __rotateToPlane(points, np.array([0, 0, 1]), normalVector, True, offset)
+    return points
 
 
-def __subdivideFace(points, maxLength):
+def __chopOffThirdDimension(npArrayOf3DPoints):
+    return np.delete(npArrayOf3DPoints, 2, 1)
+
+
+def __addEmptyThirdDimension(npArrayOf2DPoints):
+    return np.insert(npArrayOf2DPoints, 2, values=0, axis=1)
+
+
+def __rotateToPlane(points, normalVectorOriginal, normalVectorNew, isAtOrigin=True, offset=np.array([0, 0, 0])):
     """
-    Given the vertices of a 2D shape, subdivides the inner area into triangular shapes (necessary for 3D printing) using
-    the Delaunay triangulation recursively until no triangle has an edge length larger than the specified maximum.
+    Rotates a shape defined by its vertices about a defined axis. Useful for putting a planar shape located in 3D into
+    a coordinate plane or restoring it to its original location in 3D space.
 
-    Adapted from: https://stackoverflow.com/a/24952758
+    :param points:                  list of points to rotate about an axis
+    :param normalVectorOriginal:    vector (as numpy array) which is normal to the original plane
+    :param normalVectorNew:         vector (as numpy array) which is normal to the desired plane
+    :param isAtOrigin:              True if the shape defined by the given points is located at the origin
+    :param offset:                  a vector (as numpy array) offset which is either subtracted from the given points or
+                                        added to the resulting points if isAtOrigin is False or True
+    :return: new numpy array of points rotated about the defined axis
+    """
+    from math import sqrt
+    if not isAtOrigin:
+        # translate points by the offset, typically moving the shape to the origin
+        points = points - offset
+    M = normalVectorOriginal
+    N = normalVectorNew
+    # compute costheta using the geometric dot product
+    costheta = np.dot(M, N) / (np.linalg.norm(M) * np.linalg.norm(N))
+    # cross the two axis vectors, make the result a unit vector
+    mncross = np.cross(M, N)
+    axis = mncross / np.linalg.norm(mncross)
+    # shorten variable names (s = sintheta)
+    c = costheta
+    s = sqrt(1 - c * c)
+    C = 1 - c
+    [x, y, z] = axis
 
-    :param points: a Python array of input points; this array is modified in-place
-    :param maxLength: keep shrinking regions until all edges are shorter than this
+    # rotation matrix via https://en.wikipedia.org/wiki/Rotation_matrix#Axis_and_angle
+    rmat = np.array([[x * x * C + c, x * y * C - z * s, x * z * C + y * s],
+                     [y * x * C + z * s, y * y * C + c, y * z * C - x * s],
+                     [z * x * C - y * s, z * y * C + x * s, z * z * C + c]])
+
+    if isAtOrigin:
+        # rotate all of the points and then move the shape back to its original location
+        return list(map(lambda point: np.dot(rmat, point) + offset, points))
+    else:
+        # rotate all of the points; will only work correctly if the shape is at the origin
+        return list(map(lambda point: np.dot(rmat, point), points))
+
+
+def __subdivideFace(points):
+    """
+    Given the vertices of a 2D shape located in the XY coordinate plane, subdivides the inner area into triangular
+    shapes (necessary for 3D printing) using the Delaunay triangulation.
+
+    :param points: a numpy array of input points; this array is modified in-place
     :return: unused
     """
 
     from scipy.spatial import Delaunay
-    from math import sqrt, ceil
-
-    print("Delaunay triangulation with " + str(len(points)) + " points.")
 
     triangulation = Delaunay(points)
-
-    maxLengthSquared = maxLength ** 2
-    # get set of edges from the simplices
-    edges = set()
-    for simplex in triangulation.simplices:
-        # print(simplex)
-        # simplex is one triangle: [4 5 17]
-        edges.add((simplex[0], simplex[1]))
-        edges.add((simplex[1], simplex[2]))
-        edges.add((simplex[0], simplex[2]))
-    # check if all edges are small enough, subdividing recursively if not
-    isFinished = True
-    for edge in edges:
-        p1, p2 = edge
-        [x1, y1] = points[p1]
-        [x2, y2] = points[p2]
-        lengthSquared = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)  # delay the costly sqrt until necessary
-        if lengthSquared > maxLengthSquared:
-            isFinished = False
-            # split into how many pieces?
-            nPieces = ceil(sqrt(lengthSquared / maxLengthSquared))
-            for piece in range(1, int(nPieces)):
-                points.append([x1 + piece / float(nPieces) * (x2 - x1), y1 + piece / float(nPieces) * (y2 - y1)])
-    if not isFinished:
-        __subdivideFace(points, maxLength)
+    trianglePoints = []
+    for indexList in triangulation.simplices:
+        for index in indexList:
+            trianglePoints.append(points[index])
+    return trianglePoints
 
 
 def __plotDelaunayTriangles(points):
     """
-    Display the subdivided face in 2D with matplotlib.
+    Display a subdivided face in 2D with matplotlib.
 
     Adapted from: https://stackoverflow.com/a/24952758
     :param points: points to plot, connecting them by simultaneously visualizing the Delaunary triangulation
@@ -80,12 +159,17 @@ def __plotDelaunayTriangles(points):
 
 
 def main():
-    # here's an example of what's going on.
-    points = [[0, 0], [10, 3], [9.5, 4]]
-    __subdivideFace(points, 0.5)
-    __plotDelaunayTriangles(points)
-    # apparently that's how 3D models have to look.
-    # the granularity could be tweaked to match a real world constraint (0.1mm faces, e.g.)
+    points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
+              [7, 7, 4],
+              [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
+              [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
+              [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
+
+    from scipy.spatial import Voronoi
+
+    vor = Voronoi(points)
+
+    prepare(vor, "out.stl")
 
 
 main()
