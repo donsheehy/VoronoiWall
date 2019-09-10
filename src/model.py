@@ -1,3 +1,4 @@
+import vpython as v
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import Delaunay
@@ -24,19 +25,112 @@ class DelaunayTris:
         self.cid_motion = self.ax.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
         self.triangulate()
 
-    def triangulate(self):
-        self.__subdivideFace(self.points, 0.5)
-        self.__plotDelaunayTriangles(self.points, self.numPointsOriginal)
-
-    def prepare(self, voronoi, precision):
+    def prepare(voronoi, filePath):
         """
         Prepares a 3D printable model of the given Voronoi diagram.
 
         :param voronoi: computed Voronoi attributes
-        :param precision: some minimum precision value to produce an accurate 3D model
-        :return:
+        :return: unused
         """
-        # TODO: the rest
+
+        output = open(filePath, "w")
+        output.write("solid Voronoi\n")
+        faces = []
+        for indexList in voronoi.ridge_vertices:
+            if -1 not in indexList:
+                face = []
+                for index in indexList:
+                    face.append(voronoi.vertices[index])
+                faces.append(np.asarray(face))
+        # I'm thinking order could be important for the triangle vertices and is being lost?
+        for face in faces:
+            triangles = triangulate(face)
+            # compute a normal vector for this face
+            normal = np.cross(face[1] - face[0], face[2] - face[1])
+            # process points in batches of 3 (points of a triangle)
+            for i in range(0, len(triangles), 3):
+                # begin a new STL triangle
+                output.write("facet normal {} {} {}\n".format(normal[0], normal[1], normal[2]))
+                output.write("outer loop\n")
+                trianglePoints = triangles[i:i + 3]
+                for j in range(0, 3):
+                    output.write("vertex {} {} {}\n".format(trianglePoints[j][0], trianglePoints[j][1], trianglePoints[j][2]))
+            output.write("endloop\nendfacet\n")
+
+        output.write("endsolid Voronoi\n")
+
+    def triangulate(points):
+        # move all points by this much so the shape has to be touching the origin
+        offset = points[0]
+        # get a normal vector to the plane for the rotation matrix
+        normalVector = np.cross(points[1] - points[0], points[2] - points[1])
+        # translate to the origin, then rotate from the current plane onto XY-plane with normal <0,0,-1>
+        points = __rotateToPlane(points, normalVector, np.array([0, 0, 1]), False, offset)
+        # reduce the (N, 3) array to an (N, 2) array because QHull will complain about operating on planes in 3D
+        points = __chopOffThirdDimension(points)
+        # use the Delaunay triangulation to divide this plane into triangles (for 3D printing ability)
+        points = __subdivideFace(points)
+        # expand the (N, 2) array back to an (N, 3) array by adding a zeroed column
+        points = __addEmptyThirdDimension(points)
+        # rotate back to the plane we were in originally, then translate back to the original location
+        points = __rotateToPlane(points, np.array([0, 0, 1]), normalVector, True, offset)
+        return points
+
+
+    def __chopOffThirdDimension(npArrayOf3DPoints):
+        return np.delete(npArrayOf3DPoints, 2, 1)
+
+
+    def __addEmptyThirdDimension(npArrayOf2DPoints):
+        return np.insert(npArrayOf2DPoints, 2, values=0, axis=1)
+
+
+    def __rotateToPlane(points, normalVectorOriginal, normalVectorNew, isAtOrigin=True, offset=np.array([0, 0, 0])):
+        """
+        Rotates a shape defined by its vertices about a defined axis. Useful for putting a planar shape located in 3D into
+        a coordinate plane or restoring it to its original location in 3D space.
+
+        :param points:                  list of points to rotate about an axis
+        :param normalVectorOriginal:    vector (as numpy array) which is normal to the original plane
+        :param normalVectorNew:         vector (as numpy array) which is normal to the desired plane
+        :param isAtOrigin:              True if the shape defined by the given points is located at the origin
+        :param offset:                  a vector (as numpy array) offset which is either subtracted from the given points or
+                                            added to the resulting points if isAtOrigin is False or True
+        :return: new numpy array of points rotated about the defined axis
+        """
+        from math import sqrt
+        if not isAtOrigin:
+            # translate points by the offset, typically moving the shape to the origin
+            points = points - offset
+        M = normalVectorOriginal
+        N = normalVectorNew
+        # compute costheta using the geometric dot product
+        costheta = np.dot(M, N) / (np.linalg.norm(M) * np.linalg.norm(N))
+        # cross the two axis vectors, make the result a unit vector
+        mncross = np.cross(M, N)
+        axis = mncross / np.linalg.norm(mncross)
+        # shorten variable names (s = sintheta)
+        c = costheta
+        s = sqrt(1 - c * c)
+        C = 1 - c
+        [x, y, z] = axis
+
+        # rotation matrix via https://en.wikipedia.org/wiki/Rotation_matrix#Axis_and_angle
+        rmat = np.array([[x * x * C + c, x * y * C - z * s, x * z * C + y * s],
+                         [y * x * C + z * s, y * y * C + c, y * z * C - x * s],
+                         [z * x * C - y * s, z * y * C + x * s, z * z * C + c]])
+
+        if isAtOrigin:
+            # rotate all of the points and then move the shape back to its original location
+            return list(map(lambda point: np.dot(rmat, point) + offset, points))
+        else:
+            # rotate all of the points; will only work correctly if the shape is at the origin
+            return list(map(lambda point: np.dot(rmat, point), points))
+
+
+    def triangulate_vis(self):
+        self.__subdivideFace(self.points, 0.5)
+        self.__plotDelaunayTriangles(self.points, self.numPointsOriginal)
 
 
     def __subdivideFace(self, points, maxLength, depth=0):
