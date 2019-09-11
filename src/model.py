@@ -1,4 +1,3 @@
-import vpython as v
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import Delaunay
@@ -6,8 +5,9 @@ from scipy.spatial import ConvexHull
 from math import sqrt, ceil
 
 """
-Generates an STL file for 3D printing a Voronoi diagram. (eventually)
+Generates an STL file for 3D printing a Voronoi diagram.
 """
+
 
 class DelaunayTris:
     def __init__(self, points=[]):
@@ -15,8 +15,6 @@ class DelaunayTris:
         self.numPointsOriginal = len(points)
 
         self.target_point = -1
-
-
 
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
@@ -34,7 +32,9 @@ class DelaunayTris:
         """
 
         output = open(filePath, "w")
+        # a name is optional, but "solid " is not. this solid is named "Voronoi"
         output.write("solid Voronoi\n")
+        # collect the faces which don't extend out to infinity
         faces = []
         for indexList in voronoi.ridge_vertices:
             if -1 not in indexList:
@@ -42,48 +42,69 @@ class DelaunayTris:
                 for index in indexList:
                     face.append(voronoi.vertices[index])
                 faces.append(np.asarray(face))
-        # I'm thinking order could be important for the triangle vertices and is being lost?
+        # split every surface into triangles and write those triangles to file in STL format
         for face in faces:
             triangles = triangulate(face)
             # compute a normal vector for this face
             normal = np.cross(face[1] - face[0], face[2] - face[1])
-            # process points in batches of 3 (points of a triangle)
+            # process points in batches of 3 (a triangle)
             for i in range(0, len(triangles), 3):
                 # begin a new STL triangle
                 output.write("facet normal {} {} {}\n".format(normal[0], normal[1], normal[2]))
                 output.write("outer loop\n")
                 trianglePoints = triangles[i:i + 3]
                 for j in range(0, 3):
-                    output.write("vertex {} {} {}\n".format(trianglePoints[j][0], trianglePoints[j][1], trianglePoints[j][2]))
+                    output.write(
+                        "vertex {} {} {}\n".format(trianglePoints[j][0], trianglePoints[j][1], trianglePoints[j][2]))
             output.write("endloop\nendfacet\n")
-
+        # end the STL file
         output.write("endsolid Voronoi\n")
 
     def triangulate(points):
+        """
+        Splits a 3D planar facet into triangles.
+        :param points: vertex coordinates for a planar face in 3D
+        :return: vertices of the divided plane
+        """
         # move all points by this much so the shape has to be touching the origin
         offset = points[0]
         # get a normal vector to the plane for the rotation matrix
         normalVector = np.cross(points[1] - points[0], points[2] - points[1])
-        # translate to the origin, then rotate from the current plane onto XY-plane with normal <0,0,-1>
+        # translate to the origin, then rotate from the current plane onto XY-plane with normal <0,0,1>
         points = __rotateToPlane(points, normalVector, np.array([0, 0, 1]), False, offset)
         # reduce the (N, 3) array to an (N, 2) array because QHull will complain about operating on planes in 3D
         points = __chopOffThirdDimension(points)
         # use the Delaunay triangulation to divide this plane into triangles (for 3D printing ability)
-        points = __subdivideFace(points)
+        points = __subdivideOnce(points)
         # expand the (N, 2) array back to an (N, 3) array by adding a zeroed column
         points = __addEmptyThirdDimension(points)
         # rotate back to the plane we were in originally, then translate back to the original location
         points = __rotateToPlane(points, np.array([0, 0, 1]), normalVector, True, offset)
         return points
 
+    def __subdivideOnce(points):
+        """
+        Given the vertices of a 2D shape located in the XY coordinate plane, subdivides the inner area into triangular
+        shapes (necessary for 3D printing) using the Delaunay triangulation.
+
+        :param points: a numpy array of input points; this array is modified in-place
+        :return: unused
+        """
+
+        from scipy.spatial import Delaunay
+
+        triangulation = Delaunay(points)
+        trianglePoints = []
+        for indexList in triangulation.simplices:
+            for index in indexList:
+                trianglePoints.append(points[index])
+        return trianglePoints
 
     def __chopOffThirdDimension(npArrayOf3DPoints):
         return np.delete(npArrayOf3DPoints, 2, 1)
 
-
     def __addEmptyThirdDimension(npArrayOf2DPoints):
         return np.insert(npArrayOf2DPoints, 2, values=0, axis=1)
-
 
     def __rotateToPlane(points, normalVectorOriginal, normalVectorNew, isAtOrigin=True, offset=np.array([0, 0, 0])):
         """
@@ -127,11 +148,9 @@ class DelaunayTris:
             # rotate all of the points; will only work correctly if the shape is at the origin
             return list(map(lambda point: np.dot(rmat, point), points))
 
-
     def triangulate_vis(self):
         self.__subdivideFace(self.points, 0.5)
         self.__plotDelaunayTriangles(self.points, self.numPointsOriginal)
-
 
     def __subdivideFace(self, points, maxLength, depth=0):
         """
@@ -145,11 +164,10 @@ class DelaunayTris:
         :return: unused
         """
 
-        #Randomly run into error where subdivision enters an infinite loop
-        #have a depth counter to just exit if subdivision goes past the arbitrary level
+        # Randomly run into error where subdivision enters an infinite loop
+        # have a depth counter to just exit if subdivision goes past the arbitrary level
         if depth > 10:
             return
-
 
         print("Delaunay triangulation with " + str(len(points)) + " points.")
 
@@ -179,8 +197,7 @@ class DelaunayTris:
                 for piece in range(1, int(nPieces)):
                     points.append([x1 + piece / float(nPieces) * (x2 - x1), y1 + piece / float(nPieces) * (y2 - y1)])
         if not isFinished:
-            self.__subdivideFace(points, maxLength, depth=depth+1)
-
+            self.__subdivideFace(points, maxLength, depth=depth + 1)
 
     def __plotDelaunayTriangles(self, points, numOriginalPoints):
         """
@@ -191,20 +208,18 @@ class DelaunayTris:
         :return: unused
         """
 
-
-
-
         self.ax.clear()
         npPoints = np.array(points)
         triangulation = Delaunay(npPoints)
         self.ax.triplot(npPoints[:, 0], npPoints[:, 1], triangulation.simplices)
-        self.vertices = self.ax.plot(npPoints[0:numOriginalPoints, 0], npPoints[0:numOriginalPoints, 1], 'or', markersize=6)
+        self.vertices = self.ax.plot(npPoints[0:numOriginalPoints, 0], npPoints[0:numOriginalPoints, 1], 'or',
+                                     markersize=6)
         self.ax.plot(npPoints[numOriginalPoints:-1, 0], npPoints[numOriginalPoints:-1, 1], 'o', markersize=4)
 
         if self.target_point >= 0 and not self.is_inner(self.target_point):
             self.ax.plot(npPoints[self.target_point, 0], npPoints[self.target_point, 1], 'ok', markersize=6)
 
-        #Not sure why this fixes a stack overflow error but it does
+        # Not sure why this fixes a stack overflow error but it does
         for vert in self.vertices:
             vert.figure.canvas.draw()
 
@@ -214,17 +229,17 @@ class DelaunayTris:
         min_dist_squared = 1e10
         close_point = -1;
         for i in range(self.numPointsOriginal):
-            dist=(event.xdata - self.points[i][0])*(event.xdata - self.points[i][0]) + (event.ydata - self.points[i][1])*(event.ydata - self.points[i][1])
+            dist = (event.xdata - self.points[i][0]) * (event.xdata - self.points[i][0]) + (
+                    event.ydata - self.points[i][1]) * (event.ydata - self.points[i][1])
             if dist < min_dist_squared:
                 min_dist_squared = dist
                 close_point = i
-        if sqrt(min_dist_squared)<0.1:
+        if sqrt(min_dist_squared) < 0.1:
             self.target_point = close_point
             print(self.target_point)
         else:
             self.target_point = -1
             print(self.target_point)
-
 
     def on_release(self, event):
         if self.target_point == -1:
@@ -243,7 +258,6 @@ class DelaunayTris:
             self.points = self.points[0:self.numPointsOriginal]
             self.triangulate()
 
-
     def add_point(self, event):
         """
         Function to add a point on a mouse click
@@ -257,7 +271,6 @@ class DelaunayTris:
         self.remove_inner_points()
         self.triangulate()
 
-
     def remove_inner_points(self):
         """
         Remove all original points that do not define the convex hull
@@ -266,15 +279,14 @@ class DelaunayTris:
         hull = ConvexHull(self.points[0:self.numPointsOriginal])
         vertices = hull.vertices
 
-        #Tracker to make sure subsequent points are deleted correctly
+        # Tracker to make sure subsequent points are deleted correctly
         deleted_points = 0
         for i in range(self.numPointsOriginal):
             if not i in vertices:
-                #Adjust i by the number of deleted points already
+                # Adjust i by the number of deleted points already
                 self.points.pop(i - deleted_points)
                 self.numPointsOriginal -= 1
                 deleted_points += 1
-
 
     def is_inner(self, point_index):
         hull = ConvexHull(self.points[0:self.numPointsOriginal])
@@ -283,7 +295,7 @@ class DelaunayTris:
         return point_index in vertices
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     points = [[0, 0], [0.1, 0.3], [9.5, 4], [6, 0.5]]
     tris = DelaunayTris(points=points)
     plt.show()
