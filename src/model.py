@@ -1,3 +1,4 @@
+import vpython as v
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import Delaunay
@@ -74,6 +75,11 @@ class DelaunayTris:
         output.write("endsolid Voronoi\n")
 
     def triangulate(self, points):
+        """
+        Splits a 3D planar facet into triangles.
+        :param points: vertex coordinates for a planar face in 3D
+        :return: vertices of the divided plane
+        """
         # move all points by this much so the shape has to be touching the origin
         offset = points[0]
         # get a normal vector to the plane for the rotation matrix
@@ -83,13 +89,30 @@ class DelaunayTris:
         # reduce the (N, 3) array to an (N, 2) array because QHull will complain about operating on planes in 3D
         points = self.__chopOffThirdDimension(points)
         # use the Delaunay triangulation to divide this plane into triangles (for 3D printing ability)
-        points = self.__subdivideFace(points)
+        points = self.__subdivideOnce(points)
         # expand the (N, 2) array back to an (N, 3) array by adding a zeroed column
         points = self.__addEmptyThirdDimension(points)
         # rotate back to the plane we were in originally, then translate back to the original location
         points = self.__rotateToPlane(points, np.array([0, 0, 1]), normalVector, True, offset)
         return points
 
+    def __subdivideOnce(self, points):
+        """
+        Given the vertices of a 2D shape located in the XY coordinate plane, subdivides the inner area into triangular
+        shapes (necessary for 3D printing) using the Delaunay triangulation.
+
+        :param points: a numpy array of input points; this array is modified in-place
+        :return: unused
+        """
+
+        from scipy.spatial import Delaunay
+
+        triangulation = Delaunay(points)
+        trianglePoints = []
+        for indexList in triangulation.simplices:
+            for index in indexList:
+                trianglePoints.append(points[index])
+        return trianglePoints
 
     def __chopOffThirdDimension(self, npArrayOf3DPoints):
         return np.delete(npArrayOf3DPoints, 2, 1)
