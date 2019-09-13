@@ -1,24 +1,21 @@
-import vpython as v
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import Delaunay
-from scipy.spatial import ConvexHull
 from scipy.spatial import Voronoi
 from math import sqrt, ceil
 from matplotlib.widgets import Button
+from matplotlib.widgets import TextBox
+import pickle
 
 """
 Generates an STL file for 3D printing a Voronoi diagram. (eventually)
 """
-
 class DelaunayTris:
     def __init__(self, points=[]):
         self.points = points
         self.numPointsOriginal = len(points)
 
         self.target_point = -1
-
-
 
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
@@ -27,10 +24,44 @@ class DelaunayTris:
         self.cid_release = self.ax.figure.canvas.mpl_connect('button_release_event', self.on_release)
         self.cid_motion = self.ax.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
         axprepare = plt.axes([0.7, 0.05, 0.15, 0.075])
+        axsave = plt.axes([0.4, 0.05, 0.15, 0.075])
+        axopen = plt.axes([0.2, 0.05, 0.15, 0.075])
+        axfile_name = plt.axes([0.05, 0.05, 0.15, 0.075])
+
         self.bprepare = Button(axprepare, 'Prepare stl')
         self.bprepare.on_clicked(self.prepare)
 
+        self.bsave = Button(axsave, 'Save Points to file')
+        self.bsave.on_clicked(self.save_points)
+
+        self.bopen = Button(axopen, 'Open Points File')
+        self.bopen.on_clicked(self.open_points)
+
+        self.points_file = "points.p"
+        self.textbox_file_name = TextBox(axfile_name, "", initial="points.p")
+        self.textbox_file_name.on_text_change(self.update_file_name)
+
         self.triangulate_vis()
+
+    def load_points(self, points):
+        """Function to load and display an array of points"""
+        if len(points) == 0:
+            print("No points provided!")
+            return
+        print("Loading " + str(len(points)) + " " + str(len(points[0])) + " dimensional points")
+        self.points = points
+        self.triangulate_vis()
+
+    def open_points(self, event):
+        file_points = pickle.load(open(self.points_file, "rb"))
+        self.load_points(file_points)
+
+    def save_points(self, event):
+        pickle.dump(self.points, open(self.points_file, "wb+"))
+
+
+    def update_file_name(self, text):
+        self.points_file = text
 
     def prepare(self, event, filePath="out.stl"):
         """
@@ -85,18 +116,18 @@ class DelaunayTris:
         # get a normal vector to the plane for the rotation matrix
         normalVector = np.cross(points[1] - points[0], points[2] - points[1])
         # translate to the origin, then rotate from the current plane onto XY-plane with normal <0,0,-1>
-        points = self.__rotateToPlane(points, normalVector, np.array([0, 0, 1]), False, offset)
+        points = self.rotateToPlane(points, normalVector, np.array([0, 0, 1]), False, offset)
         # reduce the (N, 3) array to an (N, 2) array because QHull will complain about operating on planes in 3D
-        points = self.__chopOffThirdDimension(points)
+        points = self.chopOffThirdDimension(points)
         # use the Delaunay triangulation to divide this plane into triangles (for 3D printing ability)
-        points = self.__subdivideOnce(points)
+        points = self.subdivideOnce(points)
         # expand the (N, 2) array back to an (N, 3) array by adding a zeroed column
-        points = self.__addEmptyThirdDimension(points)
+        points = self.addEmptyThirdDimension(points)
         # rotate back to the plane we were in originally, then translate back to the original location
-        points = self.__rotateToPlane(points, np.array([0, 0, 1]), normalVector, True, offset)
+        points = self.rotateToPlane(points, np.array([0, 0, 1]), normalVector, True, offset)
         return points
 
-    def __subdivideOnce(self, points):
+    def subdivideOnce(self, points):
         """
         Given the vertices of a 2D shape located in the XY coordinate plane, subdivides the inner area into triangular
         shapes (necessary for 3D printing) using the Delaunay triangulation.
@@ -114,15 +145,15 @@ class DelaunayTris:
                 trianglePoints.append(points[index])
         return trianglePoints
 
-    def __chopOffThirdDimension(self, npArrayOf3DPoints):
+    def chopOffThirdDimension(self, npArrayOf3DPoints):
         return np.delete(npArrayOf3DPoints, 2, 1)
 
 
-    def __addEmptyThirdDimension(self, npArrayOf2DPoints):
+    def addEmptyThirdDimension(self, npArrayOf2DPoints):
         return np.insert(npArrayOf2DPoints, 2, values=0, axis=1)
 
 
-    def __rotateToPlane(self, points, normalVectorOriginal, normalVectorNew, isAtOrigin=True, offset=np.array([0, 0, 0])):
+    def rotateToPlane(self, points, normalVectorOriginal, normalVectorNew, isAtOrigin=True, offset=np.array([0, 0, 0])):
         """
         Rotates a shape defined by its vertices about a defined axis. Useful for putting a planar shape located in 3D into
         a coordinate plane or restoring it to its original location in 3D space.
@@ -166,11 +197,11 @@ class DelaunayTris:
 
 
     def triangulate_vis(self):
-        self.__subdivideFace(self.points)
-        self.__plotDelaunayTriangles(self.points, self.numPointsOriginal)
+        self.subdivideFace(self.points)
+        self.plotDelaunayTriangles(self.points, self.numPointsOriginal)
 
 
-    def __subdivideFace(self, points):
+    def subdivideFace(self, points):
         """
         Given the vertices of a 2D shape located in the XY coordinate plane, subdivides the inner area into triangular
         shapes (necessary for 3D printing) using the Delaunay triangulation.
@@ -190,7 +221,7 @@ class DelaunayTris:
 
 
 
-    def __plotDelaunayTriangles(self, points, numOriginalPoints):
+    def plotDelaunayTriangles(self, points, numOriginalPoints):
         """
         Display the subdivided face in 2D with matplotlib.
 
@@ -199,9 +230,6 @@ class DelaunayTris:
         :return: unused
         """
 
-
-
-
         self.ax.clear()
         npPoints = np.array(points)
         triangulation = Delaunay(npPoints)
@@ -209,15 +237,15 @@ class DelaunayTris:
         self.vertices = self.ax.plot(npPoints[0:numOriginalPoints, 0], npPoints[0:numOriginalPoints, 1], 'or', markersize=6)
         self.ax.plot(npPoints[numOriginalPoints:-1, 0], npPoints[numOriginalPoints:-1, 1], 'o', markersize=4)
 
-        if self.target_point >= 0 and not self.is_inner(self.target_point):
-            self.ax.plot(npPoints[self.target_point, 0], npPoints[self.target_point, 1], 'ok', markersize=6)
-
         #Not sure why this fixes a stack overflow error but it does
         for vert in self.vertices:
             vert.figure.canvas.draw()
 
     def on_press(self, event):
         print("press: " + str(event.xdata) + " " + str(event.ydata))
+        if event.inaxes == None:
+            print("Not in axis!")
+            return
         print(self.target_point)
         min_dist_squared = 1e10
         close_point = -1;
@@ -235,6 +263,9 @@ class DelaunayTris:
 
 
     def on_release(self, event):
+        if event.inaxes == None:
+            print("Not in axis!")
+            return
         if self.target_point == -1:
             self.add_point(event)
         else:
@@ -242,10 +273,11 @@ class DelaunayTris:
             self.points[self.target_point] = [event.xdata, event.ydata]
             self.target_point = -1
 
-            self.remove_inner_points()
             self.triangulate_vis()
 
     def on_motion(self, event):
+        if event.inaxes == None:
+            return
         if self.target_point >= 0:
             self.points[self.target_point] = [event.xdata, event.ydata]
             self.points = self.points[0:self.numPointsOriginal]
@@ -258,37 +290,14 @@ class DelaunayTris:
         :param event:
         :return:
         """
+        if event.inaxes == None:
+            print("Not in axes!")
+            return
         self.points = self.points[0:self.numPointsOriginal]
         self.points.append([event.xdata, event.ydata])
         self.numPointsOriginal += 1
 
-        self.remove_inner_points()
         self.triangulate_vis()
-
-
-    def remove_inner_points(self):
-        """
-        Remove all original points that do not define the convex hull
-        :return:
-        """
-        hull = ConvexHull(self.points[0:self.numPointsOriginal])
-        vertices = hull.vertices
-
-        #Tracker to make sure subsequent points are deleted correctly
-        deleted_points = 0
-        for i in range(self.numPointsOriginal):
-            if not i in vertices:
-                #Adjust i by the number of deleted points already
-                self.points.pop(i - deleted_points)
-                self.numPointsOriginal -= 1
-                deleted_points += 1
-
-
-    def is_inner(self, point_index):
-        hull = ConvexHull(self.points[0:self.numPointsOriginal])
-        vertices = hull.vertices
-
-        return point_index in vertices
 
 
 if __name__=="__main__":
