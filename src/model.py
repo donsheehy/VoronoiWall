@@ -6,6 +6,9 @@ from math import sqrt, ceil
 from matplotlib.widgets import Button
 from matplotlib.widgets import TextBox
 import pickle
+from mpl_toolkits.mplot3d import Axes3D
+
+import halfedge
 
 """
 Generates an STL file for 3D printing a Voronoi diagram. (eventually)
@@ -13,28 +16,29 @@ Generates an STL file for 3D printing a Voronoi diagram. (eventually)
 class DelaunayTris:
     def __init__(self, points=[]):
         self.points = points
-        self.numPointsOriginal = len(points)
+        self.faces = []  #Faces for halfedge data structure
 
         self.target_point = -1
 
         self.fig = plt.figure()
-        self.ax = self.fig.add_subplot(111)
+        self.ax = self.fig.gca(projection="3d")
         plt.subplots_adjust(bottom=0.2)
         self.cid_press = self.ax.figure.canvas.mpl_connect('button_press_event', self.on_press)
         self.cid_release = self.ax.figure.canvas.mpl_connect('button_release_event', self.on_release)
         self.cid_motion = self.ax.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
+
         axprepare = plt.axes([0.7, 0.05, 0.15, 0.075])
-        axsave = plt.axes([0.4, 0.05, 0.15, 0.075])
-        axopen = plt.axes([0.2, 0.05, 0.15, 0.075])
+        axsave = plt.axes([0.5, 0.05, 0.15, 0.075])
+        axopen = plt.axes([0.3, 0.05, 0.15, 0.075])
         axfile_name = plt.axes([0.05, 0.05, 0.15, 0.075])
 
         self.bprepare = Button(axprepare, 'Prepare stl')
         self.bprepare.on_clicked(self.prepare)
 
-        self.bsave = Button(axsave, 'Save Points to file')
+        self.bsave = Button(axsave, 'Save Points')
         self.bsave.on_clicked(self.save_points)
 
-        self.bopen = Button(axopen, 'Open Points File')
+        self.bopen = Button(axopen, 'Open Points')
         self.bopen.on_clicked(self.open_points)
 
         self.points_file = "points.p"
@@ -71,22 +75,21 @@ class DelaunayTris:
         :return: unused
         """
         print("Preparing")
-        points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
-              [7, 7, 4],
-              [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
-              [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
-              [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
-        voronoi = Voronoi(points)
+        # points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
+        #       [7, 7, 4],
+        #       [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
+        #       [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
+        #       [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
 
 
         output = open(filePath, "w")
         output.write("solid Voronoi\n")
         faces = []
-        for indexList in voronoi.ridge_vertices:
+        for indexList in self.voronoi.ridge_vertices:
             if -1 not in indexList:
                 face = []
                 for index in indexList:
-                    face.append(voronoi.vertices[index])
+                    face.append(self.voronoi.vertices[index])
                 faces.append(np.asarray(face))
         # I'm thinking order could be important for the triangle vertices and is being lost?
         for face in faces:
@@ -99,6 +102,7 @@ class DelaunayTris:
                 output.write("facet normal {} {} {}\n".format(normal[0], normal[1], normal[2]))
                 output.write("outer loop\n")
                 trianglePoints = triangles[i:i + 3]
+                print(trianglePoints)
                 for j in range(0, 3):
                     output.write("vertex {} {} {}\n".format(trianglePoints[j][0], trianglePoints[j][1], trianglePoints[j][2]))
             output.write("endloop\nendfacet\n")
@@ -112,20 +116,11 @@ class DelaunayTris:
         :return: vertices of the divided plane
         """
         # move all points by this much so the shape has to be touching the origin
-        offset = points[0]
-        # get a normal vector to the plane for the rotation matrix
-        normalVector = np.cross(points[1] - points[0], points[2] - points[1])
-        # translate to the origin, then rotate from the current plane onto XY-plane with normal <0,0,-1>
-        points = self.rotateToPlane(points, normalVector, np.array([0, 0, 1]), False, offset)
-        # reduce the (N, 3) array to an (N, 2) array because QHull will complain about operating on planes in 3D
-        points = self.chopOffThirdDimension(points)
-        # use the Delaunay triangulation to divide this plane into triangles (for 3D printing ability)
-        points = self.subdivideOnce(points)
-        # expand the (N, 2) array back to an (N, 3) array by adding a zeroed column
-        points = self.addEmptyThirdDimension(points)
-        # rotate back to the plane we were in originally, then translate back to the original location
-        points = self.rotateToPlane(points, np.array([0, 0, 1]), normalVector, True, offset)
-        return points
+        average_point = np.zeros((1,3))
+        for point in points:
+            average_point += point
+        average_point /= len(points)
+        return np.append(points, average_point, axis=0)
 
     def subdivideOnce(self, points):
         """
@@ -197,8 +192,8 @@ class DelaunayTris:
 
 
     def triangulate_vis(self):
-        self.subdivideFace(self.points)
-        self.plotDelaunayTriangles(self.points, self.numPointsOriginal)
+        #self.subdivideFace(self.points)
+        self.plotVoronoi(self.points)
 
 
     def subdivideFace(self, points):
@@ -221,7 +216,7 @@ class DelaunayTris:
 
 
 
-    def plotDelaunayTriangles(self, points, numOriginalPoints):
+    def plotVoronoi(self, points):
         """
         Display the subdivided face in 2D with matplotlib.
 
@@ -230,26 +225,82 @@ class DelaunayTris:
         :return: unused
         """
 
-        self.ax.clear()
-        npPoints = np.array(points)
-        triangulation = Delaunay(npPoints)
-        self.ax.triplot(npPoints[:, 0], npPoints[:, 1], triangulation.simplices)
-        self.vertices = self.ax.plot(npPoints[0:numOriginalPoints, 0], npPoints[0:numOriginalPoints, 1], 'or', markersize=6)
-        self.ax.plot(npPoints[numOriginalPoints:-1, 0], npPoints[numOriginalPoints:-1, 1], 'o', markersize=4)
+        self.voronoi = Voronoi(points)
 
-        #Not sure why this fixes a stack overflow error but it does
-        for vert in self.vertices:
-            vert.figure.canvas.draw()
+        vertices = []
+        for i in range(len(self.voronoi.vertices)):
+            location = [self.voronoi.vertices[i, 0],self.voronoi.vertices[i, 1],self.voronoi.vertices[i, 2]]
+            vertices.append(halfedge.vertex(location=location))
+
+        for r in range(len(self.voronoi.regions)):
+            #self.regions.append(halfedge.face())
+            region = self.voronoi.regions[r]
+            face = halfedge.face()
+
+            edges = []
+            for i in range(len(region)):
+                vertex_index = region[i]
+                if vertex_index == -1:
+                    break
+
+                edges.append(halfedge.halfedge(vertex=vertices[vertex_index], face=face))
+                if i > 0:
+                    edges[i].previous = edges[i-1]  #Previous edge is edge before this one in the list
+                    edges[i-1].next = edges[i]      #This edge is the next edge for the one before
+                    edges[i-1].vertex.halfedge = edges[i]   #This edge is the outgoing edge for the last vertex
+                if i == len(region)-1:
+                    edges[0].previous = edges[len(region)-1]
+                    edges[len(region)-1].next = edges[0]
+                    edges[len(region)-1].vertex.halfedge = edges[0]
+
+            if len(edges) < len(region):
+                continue
+            else:
+                face.halfedges = edges
+            self.faces.append(face)
+
+
+        #Algorithm to fill in the opposite field for halfedges
+        for f in range(len(self.faces)):        #Loop through every face
+            halfedges = self.faces[f].halfedges         #Get the halfedges that make up the face
+            for edge in halfedges:              #Do this for every halfedge
+                if edge.opposite == None:       #only if the edge doesn't have an opposite
+                    next = edge.next            #Get the next edge
+                    vertex_next_edges = edge.vertex.halfedges       #List of outgoing edges from next vertex
+                    for vertex_next_edge in vertex_next_edges:      #loop through these outgoing edges
+                        if not(vertex_next_edge == next) and vertex_next_edge.vertex == edge.previous.vertex:       #if the outgoing edge isn't the next halfedge and it goes
+                                                                                                                    #into the same vertex that the current edge originates from
+                            edge.opposite = vertex_next_edge        #Set the opposite of the current edge
+                            vertex_next_edge.opposite = edge        #to the outgoing edge
+
+
+
+
+        self.ax.clear()
+        self.voronoi_points = self.ax.scatter(self.voronoi.points[:,0],self.voronoi.points[:,1],self.voronoi.points[:,2])
+        self.ax.scatter(self.voronoi.vertices[:,0],self.voronoi.vertices[:,1],self.voronoi.vertices[:,2], 'r')
+
+        for i in range(len(self.voronoi.ridge_vertices)):
+            points = np.zeros((0,3))
+            for j in range(len(self.voronoi.ridge_vertices[i])):
+                index = self.voronoi.ridge_vertices[i][j]
+                if index >= 0:
+                    points = np.append(points, np.array([[self.voronoi.vertices[index, 0],self.voronoi.vertices[index, 1],self.voronoi.vertices[index, 2]]]), axis=0)
+            if len(points) > 1:
+                self.ax.plot(points[:, 0], points[:, 1], points[:, 2], 'b')
 
     def on_press(self, event):
-        print("press: " + str(event.xdata) + " " + str(event.ydata))
-        if event.inaxes == None:
+        print(event.inaxes)
+        print(event.xdata)
+        print(event.ydata)
+        print(self.voronoi_points.axes)
+        if event.inaxes != self.voronoi_points.axes:
             print("Not in axis!")
             return
         print(self.target_point)
         min_dist_squared = 1e10
         close_point = -1;
-        for i in range(self.numPointsOriginal):
+        for i in range(len(self.points)):
             dist=(event.xdata - self.points[i][0])*(event.xdata - self.points[i][0]) + (event.ydata - self.points[i][1])*(event.ydata - self.points[i][1])
             if dist < min_dist_squared:
                 min_dist_squared = dist
@@ -263,24 +314,22 @@ class DelaunayTris:
 
 
     def on_release(self, event):
-        if event.inaxes == None:
+        if event.inaxes != self.voronoi_points.axes:
             print("Not in axis!")
             return
         if self.target_point == -1:
             self.add_point(event)
         else:
-            self.points = self.points[0:self.numPointsOriginal]
-            self.points[self.target_point] = [event.xdata, event.ydata]
+            self.points[self.target_point] = [event.xdata, event.ydata, 0]
             self.target_point = -1
 
             self.triangulate_vis()
 
     def on_motion(self, event):
-        if event.inaxes == None:
+        if event.inaxes != self.voronoi_points.axes:
             return
         if self.target_point >= 0:
-            self.points[self.target_point] = [event.xdata, event.ydata]
-            self.points = self.points[0:self.numPointsOriginal]
+            self.points[self.target_point] = [event.xdata, event.ydata, 0]
             self.triangulate_vis()
 
 
@@ -290,17 +339,18 @@ class DelaunayTris:
         :param event:
         :return:
         """
-        if event.inaxes == None:
-            print("Not in axes!")
-            return
-        self.points = self.points[0:self.numPointsOriginal]
-        self.points.append([event.xdata, event.ydata])
-        self.numPointsOriginal += 1
+
+        self.points = np.append(points, [[event.xdata, event.ydata, 0]], axis=0)
+        print(self.points)
 
         self.triangulate_vis()
 
 
 if __name__=="__main__":
-    points = [[0, 0], [0.1, 0.3], [9.5, 4], [6, 0.5]]
+    points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
+        [7, 7, 4],
+        [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
+        [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
+        [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
     tris = DelaunayTris(points=points)
     plt.show()
