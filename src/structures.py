@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict, Set
 
 import numpy as np
 from numpy.core._multiarray_umath import ndarray
@@ -24,79 +24,101 @@ class Node:
 
 class CircularList:
     def __init__(self):
-        self.tail = None
+        self.data = []
         self.size = 0
 
     def append(self, node):
-        if self.size == 0:
-            self.tail = node
-            self.tail.next = self.tail
-        else:
-            node.next = self.tail.next
-            self.tail.next = node
-        self.tail = self.tail.next
+        self.data.append(node)
         self.size += 1
+
+    def __iter__(self):
+        return iter(self.data)
 
     def __len__(self) -> int:
         return self.size
 
     def __str__(self) -> str:
-        if self.size == 0:
-            return "[]"
-        s = []
-        current = self.tail
-        while True:
-            current = current.next
-            s.append(current)
-            if current is self.tail:
-                break
-        return str(s)
+        return str(self.data)
 
     def __repr__(self) -> str:
         return self.__str__()
 
 
 class Vertex(Node):
-    def __init__(self, coordinate: List[float]) -> None:
+    """
+    A vertex belongs to two or more Edges. It is defined by a Cartesian coordinate.
+    """
+    def __init__(self, coordinate: ndarray) -> None:
         super().__init__()
         self.coordinate = coordinate
         self.edges = CircularList()
+
+    def __eq__(self, other):
+        return self.coordinate == other.coordinate
+
+    def __hash__(self):
+        return hash(str(self.coordinate))
 
     def __str__(self) -> str:
         return str(self.coordinate)
 
 
 class Edge(Node):
-    def __init__(self, v1: Vertex, v2: Vertex, region):
+    """
+    An Edge belongs to one or more Regions. It has two vertices which bound the Edge.
+    """
+    def __init__(self, v1: Vertex, v2: Vertex) -> None:
         super().__init__()
-        v1.edges.append(self)
-        v2.edges.append(self)
+        self.regions = CircularList()
         self.v1 = v1
         self.v2 = v2
-        self.region = region
+        v1.edges.append(self)
+        v2.edges.append(self)
+
+    def __eq__(self, other):
+        return np.array_equal(self.v1, other.v1) and np.array_equal(self.v2, other.v2)
+
+    def __hash__(self):
+        # hash the vertices as a tuple
+        return hash((self.v1, self.v2))
 
     def __str__(self) -> str:
         return str(self.v1) + " -> " + str(self.v2)
 
 
 class Region(Node):
+    """
+    A Region has a Point around which it exists and a list of Edges which bound the Region.
+    """
     def __init__(self, point) -> None:
         super().__init__()
         self.point = point
         self.edges = CircularList()
 
+    def __eq__(self, other):
+        return self.point == other.point
+
+    def __hash__(self):
+        return hash(self.point)
+
     def __str__(self) -> str:
-        return "Region about " + str(self.point) + ":\n" + str(self.edges)
+        return "Region about " + str(self.point) + " with edges: " + str(self.edges)
 
 
 class Point(Node):
-    def __init__(self, coordinate):
+    def __init__(self, coordinate: ndarray) -> None:
         super().__init__()
         self.coordinate = coordinate
         self.region = Region(self)
 
+    def __eq__(self, other):
+        return self.coordinate == other.coordinate
+
+    def __hash__(self):
+        return hash(str(self.coordinate))
+
     def __str__(self) -> str:
-        return "Point at " + str(self.coordinate) + "."
+        return "Point at " + str(self.coordinate)
 
 
 def debugging(vor, points):
@@ -119,8 +141,10 @@ def debugging(vor, points):
     plt.show()
 
 
-def parse(vor: Voronoi, pts: ndarray) -> List[Region]:
-    regions: CircularList = CircularList()
+def parse(vor: Voronoi, pts: ndarray) -> CircularList:
+    foundRegions: CircularList = CircularList()
+    # edges might repeat; keep track of them
+    foundEdges: Dict = dict()
     # make all of the Vertex objects, maintaining their original ordering
     vertices: List[Vertex] = list(map(Vertex, vor.vertices))
     for regionIdx, inputPoint in zip(vor.point_region, pts):
@@ -133,31 +157,24 @@ def parse(vor: Voronoi, pts: ndarray) -> List[Region]:
             region: Region = point.region
             # form edges between pairs of points, including last -> first
             for i in range(0, len(vorRegion)):
-                # make a new Edge and append it to this Region's edge list
-                print("v1: {}".format(vertices[vorRegion[i - 1]]))
-                print("v2: {}".format(vertices[vorRegion[i]]))
-                region.edges.append(Edge(vertices[vorRegion[i - 1]], vertices[vorRegion[i]], region))
-                print(region.edges)
-            regions.append(region)
-            print()
-    return regions
+                v1: Vertex = vertices[vorRegion[i - 1]]
+                v2: Vertex = vertices[vorRegion[i]]
+                # already found this edge? use it. otherwise, make one and "find" it
+                edge: Edge = foundEdges.setdefault(Edge(v1, v2), Edge(v1, v2))
+                # tell the edge it's getting a new region
+                edge.regions.append(region)
+                # tell the region it's getting a new edge
+                region.edges.append(edge)
+            foundRegions.append(region)
+    return foundRegions
 
 
+# just a square, but reflected in every cardinal direction about its own edges
 points: ndarray = np.array(
     [[0, 0], [6, 0], [0, 6], [6, 6], [-6, 0], [-6, 6], [12, 0], [12, 6], [0, -6], [6, -6], [0, 12], [6, 12]])
 vor = Voronoi(points)
 
-#debugging(vor, points)
-#
+# debugging(vor, points)
+
 regions: CircularList = parse(vor, points)
-#
-# print(regions)
-# print(vor.regions)
-e = CircularList()
-e.append(Point(1))
-e.append(Point(2))
-e.append(Point(3))
-e.append(Point(4))
-e.append(Point(5))
-print(regions)
-print(e)
+list(map(print, regions))
