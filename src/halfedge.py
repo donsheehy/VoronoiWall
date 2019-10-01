@@ -1,3 +1,4 @@
+import numpy as np
 #Each vertex references one outgoing halfedge.
 # Each face references one of the halfedges bounding it.
 # Each halfedge provides a handle to
@@ -5,13 +6,26 @@
     # the face it belongs to
     # the next halfedge inside the face (ordered counter-clockwise)
     # the opposite halfedge
-    # the previous halfedge in the face
+    # the previous halfedge in the face3
+
+class cell:
+    faces = []
+
+    def __init__(self, faces=[]):
+        self.faces = faces
 
 class face:
     halfedges = []
 
     def __init__(self, halfedges=[]):
         self.halfedges = halfedges
+
+    def getVertices(self):
+        verts = []
+        for edge in self.halfedges:
+            verts.append(edge.vertex.location)
+
+        return np.array(verts)
 
 
 class halfedge:

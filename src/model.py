@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import Delaunay
 from scipy.spatial import Voronoi
+from scipy.spatial import ConvexHull
 from math import sqrt, ceil
 from matplotlib.widgets import Button
 from matplotlib.widgets import TextBox
@@ -9,6 +10,7 @@ import pickle
 from mpl_toolkits.mplot3d import Axes3D
 
 import halfedge
+import structures
 
 """
 Generates an STL file for 3D printing a Voronoi diagram. (eventually)
@@ -16,16 +18,16 @@ Generates an STL file for 3D printing a Voronoi diagram. (eventually)
 class DelaunayTris:
     def __init__(self, points=[]):
         self.points = points
-        self.faces = []  #Faces for halfedge data structure
+        self.cells = []  #Faces for halfedge data structure
 
         self.target_point = -1
 
         self.fig = plt.figure()
         self.ax = self.fig.gca(projection="3d")
         plt.subplots_adjust(bottom=0.2)
-        self.cid_press = self.ax.figure.canvas.mpl_connect('button_press_event', self.on_press)
-        self.cid_release = self.ax.figure.canvas.mpl_connect('button_release_event', self.on_release)
-        self.cid_motion = self.ax.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
+        # self.cid_press = self.ax.figure.canvas.mpl_connect('button_press_event', self.on_press)
+        # self.cid_release = self.ax.figure.canvas.mpl_connect('button_release_event', self.on_release)
+        # self.cid_motion = self.ax.figure.canvas.mpl_connect('motion_notify_event', self.on_motion)
 
         axprepare = plt.axes([0.7, 0.05, 0.15, 0.075])
         axsave = plt.axes([0.5, 0.05, 0.15, 0.075])
@@ -74,6 +76,7 @@ class DelaunayTris:
         :param voronoi: computed Voronoi attributes
         :return: unused
         """
+        self.subdivideFace(0)
         print("Preparing")
         # points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
         #       [7, 7, 4],
@@ -196,14 +199,28 @@ class DelaunayTris:
         self.plotVoronoi(self.points)
 
 
-    def subdivideFace(self, points):
+    def subdivideFace(self, face_index):
         """
-        Given the vertices of a 2D shape located in the XY coordinate plane, subdivides the inner area into triangular
-        shapes (necessary for 3D printing) using the Delaunay triangulation.
+        Given the index of a 3D face located in self.faces, subdivides the inner area into triangular
+        shapes (necessary for 3D printing)
         :param points: a numpy array of input points; this array is modified in-place
-        :return: unused
+        :return: array of tris
         """
 
+        face = self.faces[face_index]
+        verts = face.getVertices()
+
+        print(verts)
+        center = structures.barycenter(verts)
+
+        tris = []
+        for i in range(len(face.halfedges)):
+            cur_point = face.halfedges[i].vertex
+            next_point = face.halfedges[i].next.vertex
+            tris.append([cur_point.location, next_point.location, center])
+
+        print(tris)
+        return
         triangulation = Delaunay(points)
 
         trianglePoints = []
@@ -225,6 +242,7 @@ class DelaunayTris:
         :return: unused
         """
 
+        self.cells = []
         self.voronoi = Voronoi(points)
 
         vertices = []
@@ -234,49 +252,86 @@ class DelaunayTris:
 
         for r in range(len(self.voronoi.regions)):
             #self.regions.append(halfedge.face())
+            cell = halfedge.cell()
+            faces = []
             region = self.voronoi.regions[r]
-            face = halfedge.face()
+            region_points = []
+            region_point_indices = []
 
-            edges = []
-            for i in range(len(region)):
-                vertex_index = region[i]
-                if vertex_index == -1:
+            for index in region:
+                if index == -1 or index >= len(vertices):
                     break
+                region_points.append(vertices[index].location)
+                region_point_indices.append(vertices[index])
 
-                edges.append(halfedge.halfedge(vertex=vertices[vertex_index], face=face))
-                if i > 0:
-                    edges[i].previous = edges[i-1]  #Previous edge is edge before this one in the list
-                    edges[i-1].next = edges[i]      #This edge is the next edge for the one before
-                    edges[i-1].vertex.halfedge = edges[i]   #This edge is the outgoing edge for the last vertex
-                if i == len(region)-1:
-                    edges[0].previous = edges[len(region)-1]
-                    edges[len(region)-1].next = edges[0]
-                    edges[len(region)-1].vertex.halfedge = edges[0]
-
-            if len(edges) < len(region):
+            if len(region_points) != len(region) or len(region) < 3:
                 continue
-            else:
+
+            hull = ConvexHull(region_points)
+            for simplex in hull.simplices:
+                face = halfedge.face()
+
+                edges = []
+                for i in range(len(simplex)):
+                    edges.append(halfedge.halfedge(vertex=vertices[simplex[i]], face=face))
+                    if i > 0:
+                        edges[i].previous = edges[i-1]  #Previous edge is edge before this one in the list
+                        edges[i-1].next = edges[i]      #This edge is the next edge for the one before
+                        edges[i-1].vertex.halfedge = edges[i]   #This edge is the outgoing edge for the last vertex
+                    if i == len(simplex)-1:
+                        edges[0].previous = edges[len(simplex)-1]
+                        edges[len(simplex)-1].next = edges[0]
+                        edges[len(simplex)-1].vertex.halfedge = edges[0]
                 face.halfedges = edges
-            self.faces.append(face)
+                faces.append(face)
+            cell.faces = faces
+            self.cells.append(cell)
+            print(len(self.cells[0].faces))
 
-
-        #Algorithm to fill in the opposite field for halfedges
-        for f in range(len(self.faces)):        #Loop through every face
-            halfedges = self.faces[f].halfedges         #Get the halfedges that make up the face
-            for edge in halfedges:              #Do this for every halfedge
-                if edge.opposite == None:       #only if the edge doesn't have an opposite
-                    next = edge.next            #Get the next edge
-                    vertex_next_edges = edge.vertex.halfedges       #List of outgoing edges from next vertex
-                    for vertex_next_edge in vertex_next_edges:      #loop through these outgoing edges
-                        if not(vertex_next_edge == next) and vertex_next_edge.vertex == edge.previous.vertex:       #if the outgoing edge isn't the next halfedge and it goes
-                                                                                                                    #into the same vertex that the current edge originates from
-                            edge.opposite = vertex_next_edge        #Set the opposite of the current edge
-                            vertex_next_edge.opposite = edge        #to the outgoing edge
+        #     face = halfedge.face()
+        #
+        #     edges = []
+        #     for i in range(len(region)):
+        #         vertex_index = region[i]
+        #         if vertex_index == -1:
+        #             break
+        #
+        #         edges.append(halfedge.halfedge(vertex=vertices[vertex_index], face=face))
+        #         if i > 0:
+        #             edges[i].previous = edges[i-1]  #Previous edge is edge before this one in the list
+        #             edges[i-1].next = edges[i]      #This edge is the next edge for the one before
+        #             edges[i-1].vertex.halfedge = edges[i]   #This edge is the outgoing edge for the last vertex
+        #         if i == len(region)-1:
+        #             edges[0].previous = edges[len(region)-1]
+        #             edges[len(region)-1].next = edges[0]
+        #             edges[len(region)-1].vertex.halfedge = edges[0]
+        #
+        #     if len(edges) < len(region):
+        #         continue
+        #     else:
+        #         face.halfedges = edges
+        #     self.cells.append(face)
+        #
+        #
+        # #Algorithm to fill in the opposite field for halfedges
+        # for f in range(len(self.cells)):        #Loop through every face
+        #     halfedges = self.faces[f].halfedges         #Get the halfedges that make up the face
+        #     for edge in halfedges:              #Do this for every halfedge
+        #         if edge.opposite == None:       #only if the edge doesn't have an opposite
+        #             next = edge.next            #Get the next edge
+        #             vertex_next_edges = edge.vertex.halfedges       #List of outgoing edges from next vertex
+        #             for vertex_next_edge in vertex_next_edges:      #loop through these outgoing edges
+        #                 if not(vertex_next_edge == next) and vertex_next_edge.vertex == edge.previous.vertex:       #if the outgoing edge isn't the next halfedge and it goes
+        #                                                                                                             #into the same vertex that the current edge originates from
+        #                     edge.opposite = vertex_next_edge        #Set the opposite of the current edge
+        #                     vertex_next_edge.opposite = edge        #to the outgoing edge
 
 
 
 
         self.ax.clear()
+
+        #PLOTTING FROM SCIPY VORONOI DATA STRUCTURE
         self.voronoi_points = self.ax.scatter(self.voronoi.points[:,0],self.voronoi.points[:,1],self.voronoi.points[:,2])
         self.ax.scatter(self.voronoi.vertices[:,0],self.voronoi.vertices[:,1],self.voronoi.vertices[:,2], 'r')
 
@@ -288,6 +343,24 @@ class DelaunayTris:
                     points = np.append(points, np.array([[self.voronoi.vertices[index, 0],self.voronoi.vertices[index, 1],self.voronoi.vertices[index, 2]]]), axis=0)
             if len(points) > 1:
                 self.ax.plot(points[:, 0], points[:, 1], points[:, 2], 'b')
+
+        #PLOTTING FROM HALFEDGE DATA STRUCTURE
+        for cell in self.cells:
+            print(len(cell.faces))
+            for face in cell.faces:
+                if len(face.halfedges)<1:
+                    continue
+                start_edge = face.halfedges[-1]
+                cur_edge = start_edge.next
+                while True:
+                    locations = np.array([cur_edge.previous.vertex.location, cur_edge.vertex.location])
+                    self.ax.plot(locations[:,0], locations[:,1], locations[:,2], 'go-')
+
+                    if cur_edge == start_edge:
+                        break
+                    cur_edge = cur_edge.next
+
+        plt.show()
 
     def on_press(self, event):
         print(event.inaxes)
@@ -326,6 +399,7 @@ class DelaunayTris:
             self.triangulate_vis()
 
     def on_motion(self, event):
+        print(self.target_point)
         if event.inaxes != self.voronoi_points.axes:
             return
         if self.target_point >= 0:
