@@ -13,45 +13,36 @@ def barycenter(pts: ndarray) -> List[float]:
     return list(map(np.average, splitAxes))
 
 
-class Node:
-    def __init__(self):
-        self.next = None
-        self.prev = None
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class CircularList:
-    def __init__(self):
-        self.data = []
-        self.size = 0
-
-    def append(self, node):
-        self.data.append(node)
-        self.size += 1
-
-    def __iter__(self):
-        return iter(self.data)
-
-    def __len__(self) -> int:
-        return self.size
-
-    def __str__(self) -> str:
-        return str(self.data)
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class Vertex(Node):
+class CircularList(list):
     """
-    A vertex belongs to two or more Edges. It is defined by a Cartesian coordinate.
+    Extends the built-in list class.
     """
+
+    def cycle(self):
+        """
+        Generator that loops from the end of the list back to the beginning.
+        Use next() to increment the generator.
+        :return: essentially an infinite iterator
+        """
+        pos = 0
+        while True:
+            yield self[pos]
+            pos = (pos + 1) % len(self.items)
+
+    def __hash__(self):
+        tot = 0
+        for item in self:
+            tot += hash(item)
+        return tot
+
+
+class Vertex:
+    """
+    Point > Region > Faces > Simplices > [Vertices]
+    """
+
     def __init__(self, coordinate: ndarray) -> None:
-        super().__init__()
         self.coordinate = coordinate
-        self.edges = CircularList()
 
     def __eq__(self, other):
         return self.coordinate == other.coordinate
@@ -62,38 +53,77 @@ class Vertex(Node):
     def __str__(self) -> str:
         return str(self.coordinate)
 
+    def __repr__(self):
+        return self.__str__()
 
-class Edge(Node):
+
+class Simplex:
     """
-    An Edge belongs to one or more Regions. It has two vertices which bound the Edge.
+    Point > Region > Faces > [Simplices] > Vertices
     """
-    def __init__(self, v1: Vertex, v2: Vertex) -> None:
-        super().__init__()
-        self.regions = CircularList()
-        self.v1 = v1
-        self.v2 = v2
-        v1.edges.append(self)
-        v2.edges.append(self)
+
+    def __init__(self, face: Face, v1: Vertex, v2: Vertex, v3: Vertex) -> None:
+        self.face = face
+        self.vertices = CircularList()
+        for v in (v1, v2, v3):
+            self.vertices.append(v)
+        self.neighbors = CircularList()
 
     def __eq__(self, other):
-        return np.array_equal(self.v1, other.v1) and np.array_equal(self.v2, other.v2)
+        if len(self.vertices) != len(other.vertices):
+            return False
+        for thisVertex, otherVertex in zip(self.vertices, other.vertices):
+            if thisVertex not in other.vertices or otherVertex not in self.vertices:
+                return False
+        return True
 
     def __hash__(self):
-        # hash the vertices as a tuple
-        return hash((self.v1, self.v2))
+        # bad hash function, but inherently error detecting
+        return hash(self.face)
 
     def __str__(self) -> str:
-        return str(self.v1) + " -> " + str(self.v2)
+        return "Simplex composed of vertices: {}".format(str(self.vertices))
+
+    def __repr__(self):
+        return self.__str__()
 
 
-class Region(Node):
+class Face:
     """
-    A Region has a Point around which it exists and a list of Edges which bound the Region.
+    Point > Region > [Faces] > Simplices > Vertices
     """
-    def __init__(self, point) -> None:
-        super().__init__()
-        self.point = point
-        self.edges = CircularList()
+
+    def __init__(self, region: Region):
+        self.region = region
+        self.simplices = CircularList()
+
+    def __hash__(self):
+        # bad hash function, but inherently error detecting
+        return hash(self.region)
+
+    def __eq__(self, other):
+        if len(self.simplices) != len(other.simplices):
+            return False
+        for thisSimplex, otherSimplex in zip(self.simplices, other.simplices):
+            if thisSimplex not in other.simplices or otherSimplex not in self.simplices:
+                return False
+        return True
+
+    def __str__(self):
+        return "Face composed of simplices: {}".format(str(self.simplices))
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class Region:
+    """
+    Point > [Region] > Faces > Simplices > Vertices
+    """
+
+    def __init__(self, point: Point) -> Region:
+        self.point: Point = point
+        self.faces = CircularList()
 
     def __eq__(self, other):
         return self.point == other.point
@@ -102,14 +132,20 @@ class Region(Node):
         return hash(self.point)
 
     def __str__(self) -> str:
-        return "Region about " + str(self.point) + " with edges: " + str(self.edges)
+        return "Region about point {}.".format(str(self.point.coordinate))
+
+    def __repr__(self):
+        return self.__str__()
 
 
-class Point(Node):
-    def __init__(self, coordinate: ndarray) -> None:
-        super().__init__()
+class Point:
+    """
+    [Point] > Region > Faces > Simplices > Vertices
+    """
+
+    def __init__(self, coordinate: ndarray) -> Point:
         self.coordinate = coordinate
-        self.region = Region(self)
+        self.region: Region = Region(self)
 
     def __eq__(self, other):
         return self.coordinate == other.coordinate
@@ -118,29 +154,28 @@ class Point(Node):
         return hash(str(self.coordinate))
 
     def __str__(self) -> str:
-        return "Point at " + str(self.coordinate)
+        return "Point at {}.".format(str(self.coordinate))
+
+    def __repr__(self):
+        return self.__str__()
 
 
-def debugging(vor, points):
-    print("Voronoi Vertices:")
-    [print("{}".format(v), end=" ") for v in vor.vertices]
-    print()
-    print("Edges/Ridges:")
-    for v in vor.ridge_vertices:
-        if -1 not in v:
-            print(" - {} -> {}".format(vor.vertices[v[0]], vor.vertices[v[1]]))
-    print("Bounded Regions:")
-    for i, r in enumerate(vor.regions):
-        if -1 not in r:
-            print("Region {}:".format(i))
-            for idx in r:
-                print(" - {}".format(vor.vertices[idx]))
-    print(vor.point_region)
-    plt.scatter(*zip(*points), c="blue")
-    plt.scatter(*zip(*vor.vertices), c="red")
-    plt.show()
+class Diagram:
+    class AutoDict(dict):
+        def __getitem__(self, key):
+            if key not in self:
+                return self.setdefault(key, key)
+            else:
+                return super().__getitem__(key)
 
+    def __init__(self):
+        self.points = set()
+        self.regions = set()
+        self.faces = set()
+        self.simplices = set()
+        self.vertices = set()
 
+"""
 def parse(vor: Voronoi, pts: ndarray) -> CircularList:
     foundRegions: CircularList = CircularList()
     # edges might repeat; keep track of them
@@ -168,7 +203,6 @@ def parse(vor: Voronoi, pts: ndarray) -> CircularList:
             foundRegions.append(region)
     return foundRegions
 
-
 # just a square, but reflected in every cardinal direction about its own edges
 points: ndarray = np.array(
     [[0, 0], [6, 0], [0, 6], [6, 6], [-6, 0], [-6, 6], [12, 0], [12, 6], [0, -6], [6, -6], [0, 12], [6, 12]])
@@ -178,3 +212,5 @@ vor = Voronoi(points)
 
 regions: CircularList = parse(vor, points)
 list(map(print, regions))
+
+"""
