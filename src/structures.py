@@ -229,10 +229,8 @@ for inputIdx, regionIdx in enumerate(vor.point_region):
                 # if we've made this vertex before, reuse it
                 if vertexObj not in diagram.vertices:
                     diagram.vertices[vertexObj] = vertexObj
-                    print("made new vert")
                 else:
                     vertexObj = diagram.vertices[vertexObj]
-                    print("found eq vert")
                 vertices.append(vertexObj)
             v1, v2, v3 = vertices
             # make a new simplex object
