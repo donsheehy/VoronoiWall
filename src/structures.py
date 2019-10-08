@@ -27,7 +27,7 @@ class CircularList(list):
         pos = 0
         while True:
             yield self[pos]
-            pos = (pos + 1) % len(self.items)
+            pos = (pos + 1) % len(self)
 
     def __hash__(self):
         tot = 0
@@ -79,7 +79,7 @@ class Simplex:
         return True
 
     def __hash__(self):
-        return hash(str(barycenter(np.array([v1.coordinate, v2.coordinate, v3.coordinate]))))
+        return hash(str(barycenter(np.array([self.vertices[0].coordinate, self.vertices[1].coordinate, self.vertices[2].coordinate]))))
 
     def __str__(self) -> str:
         return "Simplex composed of vertices: {}".format(str(self.vertices))
@@ -133,13 +133,6 @@ class Point:
 
 
 class Diagram:
-    class AutoDict(dict):
-        def __getitem__(self, key):
-            if key not in self:
-                return self.setdefault(key, key)
-            else:
-                return super().__getitem__(key)
-
     def __init__(self):
         self.points = dict()
         self.regions = dict()
@@ -175,55 +168,26 @@ class Diagram:
 #     def __repr__(self):
 #         return self.__str__()
 
-points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
-                   [7, 7, 4],
-                   [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
-                   [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
-                   [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
 
-vor = Voronoi(points)
-diagram = Diagram()
-for inputIdx, regionIdx in enumerate(vor.point_region):
-    regionByIdx = vor.regions[regionIdx]
-    pointObj = Point(vor.points[inputIdx])
-    if -1 in regionByIdx or len(regionByIdx) < 4: # unbounded or 2D
-        continue
-    currentRegion = np.array(list(map(lambda idx: vor.vertices[idx], regionByIdx)))
+def makeVoronoiDiagram(inputPoints: ndarray):
+    vor = Voronoi(inputPoints)
+    diagram = Diagram()
+    for inputIdx, regionIdx in enumerate(vor.point_region):
+        regionByIdx = vor.regions[regionIdx]
+        pointObj = Point(vor.points[inputIdx])
+        if -1 in regionByIdx or len(regionByIdx) < 4: # unbounded or 2D
+            continue
+        currentRegion = np.array(list(map(lambda idx: vor.vertices[idx], regionByIdx)))
 
-    diagram.points[pointObj] = pointObj
-    regionObj = pointObj.region
-    diagram.regions[regionObj] = regionObj
-    hull = ConvexHull(currentRegion)
+        diagram.points[pointObj] = pointObj
+        regionObj = pointObj.region
+        diagram.regions[regionObj] = regionObj
+        hull = ConvexHull(currentRegion)
 
-    for i, simplexByIdx in enumerate(hull.simplices):
-        v1, v2, v3 = list(map(lambda idx: hull.points[hull.vertices[idx]], simplexByIdx))
-        vertices = []
-        for coordinate in (v1, v2, v3):
-            # make a new vertex object
-            vertexObj = Vertex(coordinate)
-            # if we've made this vertex before, reuse it
-            if vertexObj not in diagram.vertices:
-                diagram.vertices[vertexObj] = vertexObj
-            else:
-                vertexObj = diagram.vertices[vertexObj]
-            vertices.append(vertexObj)
-        v1, v2, v3 = vertices
-        # make a new simplex object
-        simplexObj = Simplex(v1, v2, v3, hull.equations[i])
-        # if we've made this simplex before, reuse it
-        if simplexObj not in diagram.simplices:
-            diagram.simplices[simplexObj] = simplexObj
-        else:
-            simplexObj = diagram.simplices[simplexObj]
-        # make the simplex, old or new, a part of this region
-        regionObj.simplices.append(simplexObj)
-        simplexObj.regions.append(regionObj)
-        # discover neighboring simplices
-        for neighborIdx in hull.neighbors[i]:
-            neighborSimplexByIdx = hull.simplices[neighborIdx]
-            v1, v2, v3 = list(map(lambda idx: hull.points[hull.vertices[idx]], neighborSimplexByIdx))
+        for i, simplexByIdx in enumerate(hull.simplices):
+            p1, p2, p3 = list(map(lambda idx: hull.points[hull.vertices[idx]], simplexByIdx))
             vertices = []
-            for coordinate in (v1, v2, v3):
+            for coordinate in (p1, p2, p3):
                 # make a new vertex object
                 vertexObj = Vertex(coordinate)
                 # if we've made this vertex before, reuse it
@@ -234,10 +198,45 @@ for inputIdx, regionIdx in enumerate(vor.point_region):
                 vertices.append(vertexObj)
             v1, v2, v3 = vertices
             # make a new simplex object
-            neighborSimplexObj = Simplex(v1, v2, v3, hull.equations[i])
+            simplexObj = Simplex(v1, v2, v3, hull.equations[i])
             # if we've made this simplex before, reuse it
-            if neighborSimplexObj not in diagram.simplices:
-                diagram.simplices[neighborSimplexObj] = neighborSimplexObj
+            if simplexObj not in diagram.simplices:
+                diagram.simplices[simplexObj] = simplexObj
             else:
-                neighborSimplexObj = diagram.simplices[neighborSimplexObj]
-            simplexObj.neighbors.append(neighborSimplexObj)
+                simplexObj = diagram.simplices[simplexObj]
+            # make the simplex, old or new, a part of this region
+            regionObj.simplices.append(simplexObj)
+            simplexObj.regions.append(regionObj)
+            # discover neighboring simplices
+            print(len(hull.neighbors))
+            print(len(hull.simplices))
+            for neighborIdx in hull.neighbors[i]:
+                neighborSimplexByIdx = hull.simplices[neighborIdx]
+                p1, p2, p3 = list(map(lambda idx: hull.points[hull.vertices[idx]], neighborSimplexByIdx))
+                vertices = []
+                for coordinate in (p1, p2, p3):
+                    # make a new vertex object
+                    vertexObj = Vertex(coordinate)
+                    # if we've made this vertex before, reuse it
+                    if vertexObj not in diagram.vertices:
+                        diagram.vertices[vertexObj] = vertexObj
+                    else:
+                        vertexObj = diagram.vertices[vertexObj]
+                    vertices.append(vertexObj)
+                v1, v2, v3 = vertices
+                # make a new simplex object
+                neighborSimplexObj = Simplex(v1, v2, v3, hull.equations[i])
+                # if we've made this simplex before, reuse it
+                if neighborSimplexObj not in diagram.simplices:
+                    diagram.simplices[neighborSimplexObj] = neighborSimplexObj
+                else:
+                    neighborSimplexObj = diagram.simplices[neighborSimplexObj]
+                simplexObj.neighbors.append(neighborSimplexObj)
+    return diagram
+
+points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
+                [7, 7, 4],
+                [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
+                [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
+                [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
+diagram = makeVoronoiDiagram(points)
