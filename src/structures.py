@@ -208,8 +208,6 @@ def makeVoronoiDiagram(inputPoints: ndarray):
             regionObj.simplices.append(simplexObj)
             simplexObj.regions.append(regionObj)
             # discover neighboring simplices
-            print(len(hull.neighbors))
-            print(len(hull.simplices))
             for neighborIdx in hull.neighbors[i]:
                 neighborSimplexByIdx = hull.simplices[neighborIdx]
                 p1, p2, p3 = list(map(lambda idx: hull.points[hull.vertices[idx]], neighborSimplexByIdx))
