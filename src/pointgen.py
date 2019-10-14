@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import mpl_toolkits.mplot3d.axes3d as p3
+import pickle
 
 # Create helix:
 def make_helix(n):
@@ -17,10 +18,13 @@ ax = fig.add_subplot(111, projection='3d')
 
 # Define no. data points and create helix:
 n = 100
-data = [make_helix(n)]
+data = make_helix(n)
+
+with open('helix.p', 'wb') as f:
+    pickle.dump(data, f)
 
 for i in range(n):
-    ax.scatter(data[0][0][i], data[0][1][i], data[0][2][i])
+    ax.scatter(data[0][i], data[1][i], data[2][i])
 
 ax.set_xlabel('X Axis')
 ax.set_ylabel('Y Axis')
