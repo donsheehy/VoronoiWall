@@ -6,11 +6,11 @@ from scipy.spatial import Voronoi, ConvexHull
 import matplotlib.pyplot as plt
 
 
-def barycenter(pts: ndarray) -> List[float]:
+def barycenter(pts):
     # split each of x, y, z, w, etc. into its own array
     splitAxes = np.squeeze(np.hsplit(pts, len(pts[0])))
     # take the average of x, y, etc. to find a midpoint
-    return list(map(np.average, splitAxes))
+    return list(map(np.average, splitAxes))  # type: ndarray
 
 
 class CircularList(list):
@@ -41,8 +41,8 @@ class Vertex:
     Point > Region > Faces > Simplices > [Vertices]
     """
 
-    def __init__(self, coordinate: ndarray) -> None:
-        self.coordinate = coordinate
+    def __init__(self, coordinate):
+        self.coordinate = coordinate  # type: ndarray
 
     def __eq__(self, other):
         return np.array_equal(self.coordinate, other.coordinate)
@@ -50,7 +50,7 @@ class Vertex:
     def __hash__(self):
         return hash(str(self.coordinate))
 
-    def __str__(self) -> str:
+    def __str__(self):
         return str(self.coordinate)
 
     def __repr__(self):
@@ -62,15 +62,20 @@ class Simplex:
     Point > Region > Faces > [Simplices] > Vertices
     """
 
-    def __init__(self, v1: Vertex, v2: Vertex, v3: Vertex, equation: ndarray) -> None:
-        self.regions = CircularList()
-        self.vertices = CircularList()
-        for v in (v1, v2, v3):
-            self.vertices.append(v)
-        self.equation = equation
-        self.neighbors = CircularList()
+    def __init__(self, v1, v2, v3, equation):
+        self.regions = CircularList()  # type: CircularList
+        self.vertices = CircularList()  # type: CircularList
+        for vertex in (v1, v2, v3):
+            self.vertices.append(vertex)
+        self.equation = equation  # type: ndarray
+        self.neighbors = CircularList()  # type: CircularList
 
     def __eq__(self, other):
+        """
+        A Simplex is considered equivalent to another Simplex if they are composed of the same three vertices.
+        :param other: another Simplex
+        :return: True if equivalent
+        """
         if len(self.vertices) != len(other.vertices):
             return False
         for thisVertex, otherVertex in zip(self.vertices, other.vertices):
@@ -79,9 +84,16 @@ class Simplex:
         return True
 
     def __hash__(self):
-        return hash(str(barycenter(np.array([self.vertices[0].coordinate, self.vertices[1].coordinate, self.vertices[2].coordinate]))))
+        """
+        Computes a hash related to the average of the three vertices.
+        This way the ordering of the vertices doesn't matter.
+        :return: a unique but repeatable hash
+        """
+        midpoint = barycenter(
+            np.array([self.vertices[0].coordinate, self.vertices[1].coordinate, self.vertices[2].coordinate]))
+        return hash(str(midpoint))
 
-    def __str__(self) -> str:
+    def __str__(self):
         return "Simplex composed of vertices: {}".format(str(self.vertices))
 
     def __repr__(self):
@@ -93,17 +105,22 @@ class Region:
     Point > [Region] > Faces > Simplices > Vertices
     """
 
-    def __init__(self, point) -> None:
-        self.point: Point = point
-        self.simplices = CircularList()
+    def __init__(self, point):
+        self.point = point  # type: Point
+        self.simplices = CircularList()  # type:CircularList
 
     def __eq__(self, other):
+        """
+        A Region is considered equivalent to another Region if the defining input point of each is the same.
+        :param other: another Region
+        :return: True if equivalent
+        """
         return self.point == other.point
 
     def __hash__(self):
         return hash(self.point)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return "Region about point {}.".format(str(self.point.coordinate))
 
     def __repr__(self):
@@ -115,17 +132,22 @@ class Point:
     [Point] > Region > Faces > Simplices > Vertices
     """
 
-    def __init__(self, coordinate: ndarray) -> None:
-        self.coordinate = coordinate
-        self.region: Region = Region(self)
+    def __init__(self, coordinate):
+        self.coordinate = coordinate  # type: ndarray
+        self.region = Region(self)  # type: Region
 
     def __eq__(self, other):
+        """
+        A Point is considered equivalent to another Point if they have the same cartesian coordinate.
+        :param other: another Point
+        :return: True if equivalent
+        """
         return self.coordinate == other.coordinate
 
     def __hash__(self):
         return hash(str(self.coordinate))
 
-    def __str__(self) -> str:
+    def __str__(self):
         return "Point at {}.".format(str(self.coordinate))
 
     def __repr__(self):
@@ -134,11 +156,24 @@ class Point:
 
 class Diagram:
     def __init__(self):
-        self.points = dict()
-        self.regions = dict()
-        self.faces = dict()
-        self.simplices = dict()
-        self.vertices = dict()
+        class AutoDict(dict):
+            """
+            Attempting to get an item from this dictionary will either get the item as normal, or,
+            in the case the the item did not exist, add the item to the dictionary and return it.
+
+            Be aware that overridden __eq__ methods for these types means that equivalency requirements
+            may be less strict than expected. For example, two simplices with antiparallel normal vectors but
+            the same set of 3 vetices are considered equivalent.
+            """
+
+            def __getitem__(self, item):
+                return super().setdefault(item, item)
+
+        self.points = AutoDict()  # type: AutoDict
+        self.regions = AutoDict()  # type: AutoDict
+        self.faces = AutoDict()  # type: AutoDict
+        self.simplices = AutoDict()  # type: AutoDict
+        self.vertices = AutoDict()  # type: AutoDict
 
 
 # class Face:
@@ -168,73 +203,82 @@ class Diagram:
 #     def __repr__(self):
 #         return self.__str__()
 
-
 def makeVoronoiDiagram(inputPoints: ndarray):
+    # compute Voronoi using SciPy
     vor = Voronoi(inputPoints)
+    # start tracking individual elements of the diagram
     diagram = Diagram()
+    # process each region
     for inputIdx, regionIdx in enumerate(vor.point_region):
+        # find the region that corresponds to the current input point
         regionByIdx = vor.regions[regionIdx]
-        pointObj = Point(vor.points[inputIdx])
-        if -1 in regionByIdx or len(regionByIdx) < 4: # unbounded or 2D
+
+        # ignore an unbounded or 2D region
+        if -1 in regionByIdx or len(regionByIdx) < 4:
             continue
+
+        # make a new point object from the input point for this region
+        pointObject = diagram.points[Point(vor.points[inputIdx])]
+
+        # convert from index-based vertices to an array of vertices defining this region
         currentRegion = np.array(list(map(lambda idx: vor.vertices[idx], regionByIdx)))
 
-        diagram.points[pointObj] = pointObj
-        regionObj = pointObj.region
-        diagram.regions[regionObj] = regionObj
+        # obtain and register the region created by constructing the point object
+        regionObject = diagram.regions[pointObject.region]
+
+        # since we've just got the set of vertices which bound the region, the convex hull should be the region itself
         hull = ConvexHull(currentRegion)
 
-        for i, simplexByIdx in enumerate(hull.simplices):
+        for simplexIdx, simplexByIdx in enumerate(hull.simplices):
+            # convert from index-based vertices to 3 coordinates defining this simplex
             p1, p2, p3 = list(map(lambda idx: hull.points[hull.vertices[idx]], simplexByIdx))
+
             vertices = []
             for coordinate in (p1, p2, p3):
-                # make a new vertex object
-                vertexObj = Vertex(coordinate)
-                # if we've made this vertex before, reuse it
-                if vertexObj not in diagram.vertices:
-                    diagram.vertices[vertexObj] = vertexObj
-                else:
-                    vertexObj = diagram.vertices[vertexObj]
-                vertices.append(vertexObj)
+                # if we've made this vertex before, the same object will be reused
+                vertexObject = diagram.vertices[Vertex(coordinate)]
+                vertices.append(vertexObject)
+
             v1, v2, v3 = vertices
-            # make a new simplex object
-            simplexObj = Simplex(v1, v2, v3, hull.equations[i])
-            # if we've made this simplex before, reuse it
-            if simplexObj not in diagram.simplices:
-                diagram.simplices[simplexObj] = simplexObj
-            else:
-                simplexObj = diagram.simplices[simplexObj]
+
+            # if we've made this simplex before, the same object will be reused
+            simplexObject = diagram.simplices[Simplex(v1, v2, v3, hull.equations[simplexIdx])]
+
             # make the simplex, old or new, a part of this region
-            regionObj.simplices.append(simplexObj)
-            simplexObj.regions.append(regionObj)
+            regionObject.simplices.append(simplexObject)
+            simplexObject.regions.append(regionObject)
+
             # discover neighboring simplices
-            for neighborIdx in hull.neighbors[i]:
+            for neighborIdx in hull.neighbors[simplexIdx]:
                 neighborSimplexByIdx = hull.simplices[neighborIdx]
                 p1, p2, p3 = list(map(lambda idx: hull.points[hull.vertices[idx]], neighborSimplexByIdx))
+
                 vertices = []
                 for coordinate in (p1, p2, p3):
-                    # make a new vertex object
-                    vertexObj = Vertex(coordinate)
-                    # if we've made this vertex before, reuse it
-                    if vertexObj not in diagram.vertices:
-                        diagram.vertices[vertexObj] = vertexObj
-                    else:
-                        vertexObj = diagram.vertices[vertexObj]
-                    vertices.append(vertexObj)
+                    # if we've made this vertex before, the same object will be reused
+                    vertexObject = diagram.vertices[Vertex(coordinate)]
+                    vertices.append(vertexObject)
+
                 v1, v2, v3 = vertices
-                # make a new simplex object
-                neighborSimplexObj = Simplex(v1, v2, v3, hull.equations[i])
-                # if we've made this simplex before, reuse it
-                if neighborSimplexObj not in diagram.simplices:
-                    diagram.simplices[neighborSimplexObj] = neighborSimplexObj
-                else:
-                    neighborSimplexObj = diagram.simplices[neighborSimplexObj]
-                simplexObj.neighbors.append(neighborSimplexObj)
+
+                # if we've made this simplex before, the same object will be reused
+                neighborSimplexObject = diagram.simplices[Simplex(v1, v2, v3, hull.equations[simplexIdx])]
+
+                # it's a neighboring simplex, so add it to our neighbors list
+                simplexObject.neighbors.append(neighborSimplexObject)
+                '''
+                it could also be implied that we are a neighbor of that simplex, but the list
+                of neighbor relationships will include that anyway, and I don't see a realistic way
+                to skip that particular iteration when we get there, so I'm just letting it happen naturally
+                by not adding simplexObj to neighborSimplexObj's neighbor list at this time
+                '''
     return diagram
 
+
 points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
-                [7, 7, 4],
-                [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
-                [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
-                [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
+                   [7, 7, 4],
+                   [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
+                   [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
+                   [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
+
 diagram = makeVoronoiDiagram(points)
