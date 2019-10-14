@@ -49,6 +49,3 @@ class vertex:
     def __init__(self, location, halfedges=[]):
         self.location = location
         self.halfedges = halfedges
-
-
-
