@@ -163,7 +163,7 @@ class Diagram:
 
             Be aware that overridden __eq__ methods for these types means that equivalency requirements
             may be less strict than expected. For example, two simplices with antiparallel normal vectors but
-            the same set of 3 vetices are considered equivalent.
+            the same set of 3 vertices are considered equivalent.
             """
 
             def __getitem__(self, item):
