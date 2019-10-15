@@ -17,7 +17,7 @@ def main():
 
     # use scipy to compute the Voronoi
     vor = Voronoi(points)
-
+ 
     # use the built-in scipy plotter to generate a matplotlib plot
     voronoi_plot_2d(vor)
 
