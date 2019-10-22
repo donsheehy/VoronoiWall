@@ -1,8 +1,7 @@
+from stl_utils import polytope, stl_plot
+
 import numpy as np
-import matplotlib.pyplot as plt
-import mpl_toolkits.mplot3d as a3
 import scipy as sp
-import pickle
 
 from scipy.spatial import Voronoi
 
@@ -19,42 +18,24 @@ def containerize(points, box):
     back = reflect(points, z = -1, dz = 2 * box[2][1])
     points.extend(left + right + top + bottom+ front + back)
 
-
 def main():
     # Prepare the points.
-    n = 1200
+    n = 10
     # data = [[i/n, 0.01 * i**2 / (n ** 2), i**3/ (n**3)] for i in range(n)]
-    # data = [sp.rand(3) for i in range(n)]
-
-    data = list(pickle.load(open("./helix.p", "rb")))
+    data = [sp.rand(3) for i in range(n)]
     containerize(data, [[0, 1], [0, 1], [0, 1]])
     input = np.array(data)
 
     # Build the Voronoi Diagram.
     vor = Voronoi(input)
 
-    # Prepare to draw.
-    ax = a3.Axes3D(plt.figure())
-    ax.set_axis_off()
-    facets = []
-
     # Generate the facets of some of the Voronoi regions.
-    k = set(range(0,100,2)) # indices of Voronoi regions to plot.
-    for i, pair in enumerate(vor.ridge_points):
-        if k & set(pair):
-            facets.append([list(vor.vertices[i]) for i in vor.ridge_vertices[i]])
+    k = 5 # index of Voronoi cell to draw.
+    facets = [vor.ridge_vertices[i] for i, pair in enumerate(vor.ridge_points) if k in pair]
 
-    # Plot the points.
-    # for x,y,z in data[:n]:
-        # ax.scatter(x,y,z, color='k')
+    P = polytope(vor.vertices, facets)
 
-    # Plot the facets.
-    polygons = a3.art3d.Poly3DCollection(facets)
-    polygons.set_alpha(0.7)
-    polygons.set_edgecolor('k')
-    ax.add_collection3d(polygons)
-
-    plt.show()
+    stl_plot(P)
 
 
 if __name__ == '__main__':
