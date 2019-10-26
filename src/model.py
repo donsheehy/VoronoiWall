@@ -7,10 +7,11 @@ from math import sqrt, ceil
 from matplotlib.widgets import Button
 from matplotlib.widgets import TextBox
 import pickle
+from util.math_utils import barycenter
 from mpl_toolkits.mplot3d import Axes3D
 
 import halfedge
-import structures
+import diagram
 
 """
 Generates an STL file for 3D printing a Voronoi diagram. (eventually)
@@ -211,7 +212,7 @@ class DelaunayTris:
         verts = face.getVertices()
 
         print(verts)
-        center = structures.barycenter(verts)
+        center = barycenter(verts)
 
         tris = []
         for i in range(len(face.halfedges)):
