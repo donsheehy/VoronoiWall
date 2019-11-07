@@ -5,6 +5,7 @@ class Point:
     def __init__(self, point, region_obj):
         self.point = point
         self.region = region_obj
+        region_obj.point = self
 
 
 class Region:
@@ -12,6 +13,7 @@ class Region:
         self.vertices_i = vertices_i
         self.vertices = [voronoi.vertices[i] for i in vertices_i if i != -1]  # -1 means unbounded; don't index to -1
         self.facets = []
+        self.point = None
 
 
 class Facet:
@@ -19,6 +21,7 @@ class Facet:
         self.voronoi = voronoi
         self.vertices_i = vertices_i
         self.vertices = [voronoi.vertices[i] for i in vertices_i if i != -1]
+        self.regions = []
 
     def triangles(self):
         for i in range(1, len(self.vertices) - 1):
@@ -40,6 +43,7 @@ class Diagram:
                 region_vert_set = set(region_obj.vertices_i)
                 if facet_vert_set <= region_vert_set:
                     region_obj.facets.append(facet_obj)
+                    facet_obj.regions.appen(region_obj)
 
         self.points = [Point(self.voronoi.points[i], self.regions[region_i]) for i, region_i in
                        enumerate(self.voronoi.point_region)]
