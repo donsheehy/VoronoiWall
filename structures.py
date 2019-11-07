@@ -10,14 +10,19 @@ class Point:
 class Region:
     def __init__(self, voronoi, vertices_i):
         self.vertices_i = vertices_i
-        self.vertices = [voronoi.vertices[i] for i in vertices_i]
+        self.vertices = [voronoi.vertices[i] for i in vertices_i if i != -1]  # -1 means unbounded; don't index to -1
         self.facets = []
 
 
 class Facet:
     def __init__(self, voronoi, vertices_i):
+        self.voronoi = voronoi
         self.vertices_i = vertices_i
-        self.vertices = [voronoi.vertices[i] for i in vertices_i]
+        self.vertices = [voronoi.vertices[i] for i in vertices_i if i != -1]
+
+    def triangles(self):
+        for i in range(1, len(self.vertices) - 1):
+            yield Facet(self.voronoi, [self.vertices_i[0], self.vertices_i[i], self.vertices_i[i + 1]])
 
 
 class Diagram:
