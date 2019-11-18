@@ -43,7 +43,7 @@ class Diagram:
                 region_vert_set = set(region_obj.vertices_i)
                 if facet_vert_set <= region_vert_set:
                     region_obj.facets.append(facet_obj)
-                    facet_obj.regions.appen(region_obj)
+                    facet_obj.regions.append(region_obj)
 
         self.points = [Point(self.voronoi.points[i], self.regions[region_i]) for i, region_i in
                        enumerate(self.voronoi.point_region)]
