@@ -3,9 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# STL files
-*.stl
-
 # C extensions
 *.so
 
