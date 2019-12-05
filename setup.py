@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="VoronoiWall", # Replace with your own username
-    version="1.0.3",
+    version="1.1.0",
     author="CSC@NCSU",
     author_email="drsheehy@ncsu.edu",
     description="Pipeline for processing the Voronoi diagram of a point set, producing STL formatted output for the purpose of 3D printing.",

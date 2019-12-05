@@ -1,4 +1,5 @@
 from scipy.spatial import Voronoi
+from sys import stderr
 
 
 class Point:

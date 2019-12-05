@@ -2,6 +2,14 @@ from stl import mesh, stl
 import numpy as np
 from mpl_toolkits import mplot3d
 from matplotlib import pyplot
+from VoronoiWall.structures import Diagram
+
+
+def readPointsFile(fileName):
+    with open(fileName, 'r') as input_file:
+        input_file.readline()
+        # split each line at tabs, casting to 3 floats, storing as [[x, y, z], ...]
+        return np.array([list(map(float, line.split('\t', 3))) for line in input_file])
 
 
 def plotSTLMesh(mesh):

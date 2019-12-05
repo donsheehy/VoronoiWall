@@ -1,7 +1,7 @@
 from sys import argv, stderr
 import numpy as np
 from VoronoiWall.structures import Diagram
-from VoronoiWall.printable import diagramToSTLMesh, plotSTLMesh
+from VoronoiWall.printable import diagramToSTLMesh, plotSTLMesh, readPointsFile
 
 
 def usage():
@@ -15,23 +15,14 @@ def usage():
 def main():
     usage()
 
-    # Try to open the input file.
+    # Parse the coordinate points from the input file.
     try:
-        input_file = open(argv[1], 'r')
+        points_array = readPointsFile(argv[1])
     except FileNotFoundError:
         stderr.write("ERROR: Input file not found, {}\n".format(argv[1]))
         exit(1)
 
-    # Parse the coordinates from the input file.
-    with input_file:
-        input_file.readline()
-        # split each line at tabs, casting to 3 floats, storing as [[x, y, z], ...]
-        points = [list(map(float, line.split('\t', 3))) for line in input_file]
-
-    # Our functions expect a numpy array, so make one.
-    points_array = np.array(points)
-
-    # Generate the Voronoi diagram data structure.
+    # Construct the Voronoi Diagram data structure.
     diagram = Diagram(points_array)
 
     # Warn the user if all regions are unbounded (can't be plotted).
