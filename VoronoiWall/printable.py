@@ -1,20 +1,42 @@
 from stl import mesh, stl
 import numpy as np
+from mpl_toolkits import mplot3d
+from matplotlib import pyplot
+
+
+def plotSTLMesh(mesh):
+    # Create a new plot.
+    figure = pyplot.figure()
+    axes = mplot3d.Axes3D(figure)
+
+    # Load the STL files and add the vectors to the plot.
+    axes.add_collection3d(mplot3d.art3d.Poly3DCollection(mesh.vectors))
+
+    # Auto scale to the mesh size.
+    scale = mesh.points.flatten(-1)
+    axes.auto_scale_xyz(scale, scale, scale)
+
+    # Show the plot to the screen.
+    pyplot.show()
 
 
 def diagramToSTLMesh(diagram):
+    # Flip any faces facing inwards to now face outwards.
+    fixOrdering(diagram)
+
     vertices = diagram.vertices
 
-    # collect the facets of bounded regions
+    # Collect the facets of bounded regions.
     bounded_region_facets = [y for x in [region.facets for region in diagram.bounded_regions] for y in x]
 
-    # collect the vertices of triangulated facets
+    # Collect the vertices of triangulated facets.
     tri_facets_i = []
     for facet in bounded_region_facets:
         for tri in facet.triangles():
             tri_facets_i.append(tri.vertices_i)
     tri_facets_i = np.array(tri_facets_i)
 
+    # Generate the Mesh object.
     m = mesh.Mesh(np.zeros(tri_facets_i.shape[0], dtype=mesh.Mesh.dtype))
     for i, facet_i in enumerate(tri_facets_i):
         for j in range(len(facet_i)):
@@ -37,7 +59,7 @@ def fixOrdering(diagram):
         for region in facet.regions:
             if -1 not in region.vertices_i:
                 input_point = region.point
-        
+
         # if this bounded facet was part of an unbounded region
         if input_point is None:
             continue
@@ -64,19 +86,17 @@ if __name__ == '__main__':
     from structures import Diagram
 
     points = np.array([[0, 0, 3], [0, 3, 3], [3, 0, 3], [3, 3, 3], [0, 0, 0], [0, 3, 0], [3, 0, 0], [3, 3, 0],
-                      [1, 2, 2], [2, 2, 2], [1, 2, 1], [2, 2, 1], [1, 1, 2], [2, 1, 2], [1, 1, 1], [2, 1, 1]])
-    points = np.array([[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
-           [7, 7, 4],
-           [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
-           [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
-           [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
+                       [1, 2, 2], [2, 2, 2], [1, 2, 1], [2, 2, 1], [1, 1, 2], [2, 1, 2], [1, 1, 1], [2, 1, 1]])
+    points = np.array(
+        [[6, 4, 2], [9, 5, 8], [9, 1, 9], [8, 9, 1], [3, 8, 8], [2, 6, 2], [8, 2, 10], [3, 6, 1], [9, 8, 9],
+         [7, 7, 4],
+         [2, 10, 5], [4, 3, 10], [5, 3, 9], [4, 7, 4], [3, 6, 7], [7, 4, 3], [6, 4, 9], [5, 8, 4], [2, 9, 10],
+         [7, 8, 6], [9, 2, 7], [6, 10, 7], [9, 9, 3], [2, 9, 4], [5, 9, 6], [4, 8, 9], [9, 1, 2], [6, 9, 1],
+         [10, 6, 5], [1, 9, 9], [2, 1, 3], [10, 1, 5], [4, 10, 2]])
     # Generate the Diagram data structure
     diagram = Diagram(points)
 
-    # Reorient any incorrectly ordered facets (normal vectors would have been the wrong way)
-    fixOrdering(diagram)
-
-    # Generate a Mesh object
+    # Generate a Mesh object with correct normals
     m = diagramToSTLMesh(diagram)
 
     # Write the Mesh to an STL file

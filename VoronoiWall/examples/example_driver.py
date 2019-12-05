@@ -1,28 +1,57 @@
 from sys import argv, stderr
 import numpy as np
 from VoronoiWall.structures import Diagram
-from VoronoiWall.printable import fixOrdering, diagramToSTLMesh
+from VoronoiWall.printable import diagramToSTLMesh, plotSTLMesh
+
+
+def usage():
+    if len(argv) < 2 or len(argv) > 3:
+        stderr.write("Usage: python {} input_file [output_file]\n".format(argv[0]))
+        stderr.write("\tinput_file: a set of coordinates defined in three dimensions\n")
+        stderr.write("\toutput_file: optionally, provide a name for the output STL file\n")
+        exit(1)
+
 
 def main():
-    if len(argv) != 2:
-        stderr.write("Usage: python {} input_file\n".format(argv[0]))
-        stderr.write("\tinput_file: a set of coordinates defined in three dimensions\n")
-        exit(1)
+    usage()
+
+    # Try to open the input file.
     try:
         input_file = open(argv[1], 'r')
     except FileNotFoundError:
-        stderr.write("ERROR: File not found, {}\n".format(argv[1]))
+        stderr.write("ERROR: Input file not found, {}\n".format(argv[1]))
         exit(1)
 
+    # Parse the coordinates from the input file.
     with input_file:
-        # skip the first line
         input_file.readline()
-        # split each line at tabs, casting to 3 ints, storing as [[x, y, z], ...]
-        points = [list(map(int, line.split('\t', 3))) for line in input_file]
+        # split each line at tabs, casting to 3 floats, storing as [[x, y, z], ...]
+        points = [list(map(float, line.split('\t', 3))) for line in input_file]
 
+    # Our functions expect a numpy array, so make one.
     points_array = np.array(points)
 
+    # Generate the Voronoi diagram data structure.
     diagram = Diagram(points_array)
+
+    # Warn the user if all regions are unbounded (can't be plotted).
+    if len(diagram.bounded_regions) == 0:
+        print("WARNING: The Voronoi diagram of the given input has no bounded regions.")
+
+    # Generate an STL representation of the Diagram.
+    mesh = diagramToSTLMesh(diagram)
+
+    # Save it if an output file name was provided.
+    if len(argv) == 3:
+        try:
+            mesh.save(argv[2])
+        except FileNotFoundError:
+            stderr.write("ERROR: Output file not found, {}\n".format(argv[1]))
+            exit(1)
+
+    # Display the STL mesh on the screen.
+    plotSTLMesh(mesh)
+
 
 if __name__ == '__main__':
     main()
