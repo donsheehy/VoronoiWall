@@ -1,9 +1,12 @@
-# VoronoiWall
+VoronoiWall
+
 It's what you think it is.
 
 ## Description
 
+A tool for generating and processing geometric Voronoi diagrams 
 
+![Large 3D Voronoi Model](VoronoiWall/docs/img/monster_as_stl.png?raw=true "Large 3D Voronoi Model")
 
 ## Requirements
 
@@ -47,7 +50,7 @@ The example driver program allows testing various functionality of the library.
 Given a set of input points, the example driver will:
 
 - Generate a Voronoi diagram data structure
-- Generate an STL mesh object encoding the Voronoi vertices
+- Generate an STL mesh object encoding the Voronoi facets
 - Display the Voronoi diagram using matplotlib
 - Optionally, output the mesh to an STL file
 
