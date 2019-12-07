@@ -1,12 +1,14 @@
-VoronoiWall
+# VoronoiWall
 
 It's what you think it is.
 
 ## Description
 
-A tool for generating and processing geometric Voronoi diagrams 
+A tool for generating, visualizing, and processing geometric Voronoi diagrams.
 
 ![Large 3D Voronoi Model](VoronoiWall/docs/img/monster_as_stl.png?raw=true "Large 3D Voronoi Model")
+
+
 
 ## Requirements
 
